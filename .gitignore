@@ -1,0 +1,44 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+uv.lock
+*.bak
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Node / webapp
+webapp/node_modules/
+webapp/dist/
+webapp/package-lock.json
+
+# IDE
+.vscode/
+.cursor/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temp / logs
+D:/Dev/repos/temp/dreame_*
+*.log
+
+# Tasshack ref clone — NOT committed, must exist locally
+# tasshack_dreame_vacuum_ref/ is a sibling repo, not part of this one
+# Rust / Zed IDE — rust-analyzer may create target/ at repo root
+target/
