@@ -1,0 +1,29 @@
+[project]
+name = "dreame-mcp"
+version = "0.2.0"
+description = "FastMCP 3.1 MCP server and webapp for Dreame robot vacuums via DreameHome cloud"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp>=3.1.0",
+    "httpx>=0.27.0",
+    "pydantic>=2.0.0",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.23.0",
+    "structlog>=23.0.0",
+    # DreameHome cloud protocol deps (from tasshack dreame-vacuum)
+    "requests>=2.31.0",
+    "paho-mqtt>=1.6.1",
+    "pycryptodome>=3.20.0",
+    "numpy>=1.26.0",
+    "Pillow>=10.0.0",
+    "cryptography>=42.0.0",
+    "py-mini-racer>=0.6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dreame_mcp"]
