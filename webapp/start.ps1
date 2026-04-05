@@ -1,4 +1,4 @@
-# Dreame D20 Pro Plus MCP - backend + webapp startup
+﻿# Dreame D20 Pro Plus MCP - backend + webapp startup
 # Ports: 10894 backend (MCP SSE + REST), 10895 frontend (Vite)
 # Requires: Windows PowerShell 5.1+, uv, Node/npm
 
@@ -136,6 +136,12 @@ try {
     Write-Host ""
     Write-Host "Press Ctrl+C to stop."
 
+# 4b. Launch background task to open browser once frontend is ready (Auto-opened by Antigravity)
+$frontendUrl = "http://127.0.0.1:$WEBAPP_PORT/"
+$pollAndOpen = "for (`$i = 0; `$i -lt 60; `$i++) { try { `$null = Invoke-WebRequest -Uri '$frontendUrl' -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop; Start-Process '$frontendUrl'; exit } catch { Start-Sleep -Seconds 1 } }"
+Start-Process powershell -ArgumentList "-NoProfile", "-WindowStyle", "Hidden", "-Command", $pollAndOpen
+
+
     while ($true) { Start-Sleep -Seconds 1 }
 
 } catch {
@@ -147,3 +153,5 @@ try {
     Stop-Tracked
     Write-Host "[DONE] Dreame MCP stopped." -ForegroundColor Green
 }
+
+

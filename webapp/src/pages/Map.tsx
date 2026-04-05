@@ -1,21 +1,32 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { ScanLine, RefreshCw, AlertCircle } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { ScanLine, RefreshCw, AlertCircle, Clock } from 'lucide-react'
 import { api, type DreameMapResponse } from '../lib/api'
 
 export default function MapPage() {
   const [mapData, setMapData] = useState<DreameMapResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isTimeout, setIsTimeout] = useState(false)
   const [showRaw, setShowRaw] = useState(false)
 
   const fetchMap = useCallback(async () => {
     setLoading(true)
     setError(null)
+    setIsTimeout(false)
     try {
       const data = await api.getMap()
-      setMapData(data)
+      if (data.timeout) {
+        // Backend returned a timeout response (not an HTTP error)
+        setError(data.error as string || 'Map request timed out')
+        setIsTimeout(true)
+        setMapData(null)
+      } else {
+        setMapData(data)
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load map')
+      const msg = e instanceof Error ? e.message : 'Failed to load map'
+      setError(msg)
+      setIsTimeout(msg.toLowerCase().includes('timed out'))
       setMapData(null)
     } finally {
       setLoading(false)
@@ -63,14 +74,29 @@ export default function MapPage() {
       )}
 
       {error && (
-        <div className="flex items-start gap-3 p-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 text-amber-200">
-          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+        <div className={`flex items-start gap-3 p-4 rounded-2xl border ${
+          isTimeout
+            ? 'border-blue-500/20 bg-blue-500/10 text-blue-200'
+            : 'border-amber-500/20 bg-amber-500/10 text-amber-200'
+        }`}>
+          {isTimeout ? (
+            <Clock className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          ) : (
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          )}
           <div>
-            <p className="font-medium">Map unavailable</p>
-            <p className="text-sm text-amber-200/80 mt-1">{error}</p>
-            <p className="text-xs text-slate-400 mt-2">
-              Ensure the backend is running, or set <span className="text-slate-300">VITE_DREAME_MAP_URL</span> to an alternate map endpoint. Default: GET /api/v1/map
-            </p>
+            <p className="font-medium">{isTimeout ? 'Map request timed out' : 'Map unavailable'}</p>
+            <p className="text-sm opacity-80 mt-1">{error}</p>
+            {isTimeout && (
+              <p className="text-xs text-slate-400 mt-2">
+                The DreameHome cloud may be slow or unreachable. Try again in a moment.
+              </p>
+            )}
+            {!isTimeout && (
+              <p className="text-xs text-slate-400 mt-2">
+                Ensure the backend is running, or set <span className="text-slate-300">VITE_DREAME_MAP_URL</span> to an alternate map endpoint. Default: GET /api/v1/map
+              </p>
+            )}
           </div>
         </div>
       )}

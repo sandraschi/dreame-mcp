@@ -30,6 +30,14 @@ from typing import Any
 logger = logging.getLogger("dreame-mcp.client")
 
 # ---------------------------------------------------------------------------
+# Timeouts (seconds)
+# ---------------------------------------------------------------------------
+
+EXECUTOR_TIMEOUT = 35  # max wall-clock for any run_in_executor call
+MAP_FETCH_TIMEOUT = 45  # map can be slow — higher ceiling
+CONNECT_TIMEOUT = 30  # login + MQTT setup
+
+# ---------------------------------------------------------------------------
 # Tasshack ref clone bootstrap
 # ---------------------------------------------------------------------------
 
@@ -181,7 +189,11 @@ _ACTION_MAP = {
 # ---------------------------------------------------------------------------
 
 class DreameHomeClient:
-    """Async-friendly wrapper around DreameVacuumDreameHomeCloudProtocol."""
+    """Async-friendly wrapper around DreameVacuumDreameHomeCloudProtocol.
+
+    All public async methods are guarded with asyncio.wait_for() to prevent
+    indefinite hangs when the DreameHome cloud is unreachable or slow.
+    """
 
     def __init__(
         self,
@@ -199,7 +211,7 @@ class DreameHomeClient:
         self._auth_key = auth_key
         self._ref_path = ref_path or _REF_DEFAULT
         self._protocol = None
-        self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="dreame")
+        self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="dreame")
         self._map_manager = None
 
     # ------------------------------------------------------------------
@@ -207,9 +219,16 @@ class DreameHomeClient:
     # ------------------------------------------------------------------
 
     async def connect(self) -> bool:
-        """Bootstrap Tasshack libs, login, discover device."""
+        """Bootstrap Tasshack libs, login, discover device. Timeout-guarded."""
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(self._executor, self._connect_sync)
+        try:
+            return await asyncio.wait_for(
+                loop.run_in_executor(self._executor, self._connect_sync),
+                timeout=CONNECT_TIMEOUT,
+            )
+        except TimeoutError:
+            logger.error("connect() timed out after %ds", CONNECT_TIMEOUT)
+            return False
 
     def _connect_sync(self) -> bool:
         try:
@@ -288,8 +307,16 @@ class DreameHomeClient:
     # ------------------------------------------------------------------
 
     async def get_status(self) -> DreameStatus:
+        """Fetch robot status. Timeout-guarded."""
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(self._executor, self._get_status_sync)
+        try:
+            return await asyncio.wait_for(
+                loop.run_in_executor(self._executor, self._get_status_sync),
+                timeout=EXECUTOR_TIMEOUT,
+            )
+        except TimeoutError:
+            logger.error("get_status() timed out after %ds", EXECUTOR_TIMEOUT)
+            return DreameStatus(error=f"Status request timed out ({EXECUTOR_TIMEOUT}s)")
 
     def _get_status_sync(self) -> DreameStatus:
         if not self._protocol:
@@ -342,8 +369,16 @@ class DreameHomeClient:
     # ------------------------------------------------------------------
 
     async def control(self, cmd: str) -> dict:
+        """Send control command. Timeout-guarded."""
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(self._executor, self._control_sync, cmd)
+        try:
+            return await asyncio.wait_for(
+                loop.run_in_executor(self._executor, self._control_sync, cmd),
+                timeout=EXECUTOR_TIMEOUT,
+            )
+        except TimeoutError:
+            logger.error("control(%s) timed out after %ds", cmd, EXECUTOR_TIMEOUT)
+            return {"success": False, "error": f"Control request timed out ({EXECUTOR_TIMEOUT}s)"}
 
     def _control_sync(self, cmd: str) -> dict:
         if not self._protocol:
@@ -364,32 +399,39 @@ class DreameHomeClient:
             return {"success": False, "error": str(e)}
 
     # ------------------------------------------------------------------
-    # Map
+    # Map — the critical path that was hanging
     # ------------------------------------------------------------------
 
     async def get_map(self) -> dict:
-        """Fetch and decode the current map. Returns base64 PNG if rendering works."""
+        """Fetch and decode the current map. Returns base64 PNG if rendering works.
+
+        Timeout-guarded: aborts after MAP_FETCH_TIMEOUT seconds to prevent
+        indefinite hangs when DreameHome cloud is unreachable.
+        """
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(self._executor, self._get_map_sync)
+        try:
+            return await asyncio.wait_for(
+                loop.run_in_executor(self._executor, self._get_map_sync),
+                timeout=MAP_FETCH_TIMEOUT,
+            )
+        except TimeoutError:
+            logger.error("get_map() timed out after %ds", MAP_FETCH_TIMEOUT)
+            return {
+                "success": False,
+                "error": f"Map request timed out ({MAP_FETCH_TIMEOUT}s). "
+                         "DreameHome cloud may be unreachable.",
+                "timeout": True,
+            }
 
     def _get_map_sync(self) -> dict:
         if not self._protocol:
             return {"success": False, "error": "Not connected"}
         try:
-            # Prefer the live OBJECT_NAME property (siid=6 piid=3) over protocol.object_name.
-            object_name: str | None = None
-            try:
-                props = self._protocol.get_properties(["6.3"])
-                if props and "6.3" in props:
-                    val = props["6.3"]
-                    if isinstance(val, str) and val.strip():
-                        object_name = val.strip()
-            except Exception:
-                object_name = None
-
-            # Fallback: use protocol-computed object name (may be stale/incorrect for map files).
-            if not object_name:
-                object_name = getattr(self._protocol, "object_name", None)
+            # Get the object_name from the protocol's computed property.
+            # NOTE: Previously tried get_properties(["6.3"]) for live lookup,
+            # but the Tasshack API response shape doesn't match simple dict key
+            # lookup. The computed object_name (model/uid/did/0) is the reliable path.
+            object_name = getattr(self._protocol, "object_name", None)
 
             if not object_name or not str(object_name).strip("/"):
                 return {
@@ -398,20 +440,34 @@ class DreameHomeClient:
                 }
 
             object_name = str(object_name).strip()
+            logger.info("Map fetch: object_name=%s", object_name)
 
-            # Fetch raw map file from cloud. Different firmwares/backends appear to require different `type` values.
+            # Fetch raw map file from cloud.
+            # Different firmwares/backends require different `type` values.
+            # Fail fast: stop after first cloud error (not timeout) to avoid
+            # cumulative 60s+ blocking on 4 variants.
             raw = None
             attempted: list[dict[str, str]] = []
+            fail_count = 0
+            max_fails = 2  # bail after 2 cloud failures — don't try all 4
+
             for file_type in ("map", 0, "0", object_name):
+                if fail_count >= max_fails:
+                    logger.warning("Map fetch: %d cloud failures, skipping remaining type variants", fail_count)
+                    break
                 try:
                     attempted.append({"filename": object_name, "type": str(file_type)})
+                    logger.debug("Map fetch: trying type=%s", file_type)
                     raw = self._protocol.get_device_file(object_name, file_type)
-                except Exception:
+                except Exception as e:
+                    logger.warning("Map fetch type=%s failed: %s", file_type, e)
                     raw = None
+                    fail_count += 1
                 if raw is not None:
+                    logger.info("Map fetch: success with type=%s (%d bytes)", file_type, len(raw))
                     break
 
-            # As a last resort, try signed URL flow (some backends don't allow direct file fetch).
+            # Signed URL fallback (some backends don't allow direct file fetch)
             if raw is None:
                 try:
                     obj_for_url = object_name if object_name.startswith("/") else f"/{object_name}"
@@ -421,8 +477,10 @@ class DreameHomeClient:
                         url = url_data.get("url") or url_data.get("fileUrl")
                     if isinstance(url, str) and url.strip():
                         attempted.append({"filename": obj_for_url, "type": "signed_url"})
+                        logger.info("Map fetch: trying signed URL")
                         raw = self._protocol.get_file(url.strip())
-                except Exception:
+                except Exception as e:
+                    logger.warning("Map fetch signed URL failed: %s", e)
                     raw = None
 
             if raw is None:

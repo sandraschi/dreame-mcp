@@ -6,6 +6,26 @@ All notable changes to dreame-mcp are documented here.
 
 ## [Unreleased]
 
+### Fixed — LIDAR map download hang (critical)
+
+- **`asyncio.wait_for()` on all `run_in_executor` calls**: `get_map()` (45s), `get_status()` / `control()` (35s), `connect()` (30s). Previously, any cloud timeout cascaded into indefinite blocking of the REST endpoint and MCP tool.
+- **Fail-fast file-type loop**: Map fetch now bails after 2 cloud failures instead of exhausting all 4 type variants (was up to 60s cumulative per attempt).
+- **Removed broken `get_properties(["6.3"])` live object_name lookup**: Tasshack `get_properties()` returns a different response shape than expected; the code always fell through silently. Now uses `protocol.object_name` directly.
+- **Thread pool increased from 2 to 4**: Prevents deadlock when concurrent map + status calls both block on cloud I/O.
+- **Frontend `AbortController` + timeout**: `api.ts` now aborts all fetch calls after 15s (50s for map), preventing infinite spinner in the webapp.
+- **Map page timeout UX**: `Map.tsx` shows distinct timeout indicator (blue clock icon) with retry guidance instead of generic error.
+
+### Fixed — Secondary
+
+- Version mismatch: `__init__.py` synced to `0.2.0` (was stale `0.1.0`).
+- `__main__.py` docstring port corrected: `10794` → `10894`.
+- Removed unused `React` import in `Map.tsx` (React 19 automatic JSX).
+
+### Changed
+
+- FastMCP dependency bumped to `>=3.2.0`.
+- Added Ruff config (`pyproject.toml`): 120-char lines, py312 target.
+
 ### Docs
 
 - Added `docs/MAP_AND_ROBOTICS.md` (map vs miIO, `/api/v1/map` JSON contract, fleet use with robotics-mcp / yahboom-mcp).

@@ -3,8 +3,11 @@
 Talks to DreameHome cloud via DreameHomeClient (no local token needed).
 """
 from __future__ import annotations
+
 import logging
+
 from fastmcp import Context
+
 from .state import _state
 
 logger = logging.getLogger("dreame-mcp.portmanteau")

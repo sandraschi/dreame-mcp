@@ -4,8 +4,11 @@ Uses ctx.sample() correctly: passes a text prompt to the LLM client,
 which then calls back into our registered MCP tools (dreame_tool) as needed.
 """
 from __future__ import annotations
+
 import logging
+
 from fastmcp import Context
+
 from .portmanteau import dreame_tool
 
 logger = logging.getLogger("dreame-mcp.agentic")

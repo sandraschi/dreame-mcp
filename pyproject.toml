@@ -1,11 +1,11 @@
 [project]
 name = "dreame-mcp"
 version = "0.2.0"
-description = "FastMCP 3.1 MCP server and webapp for Dreame robot vacuums via DreameHome cloud"
+description = "FastMCP 3.2 MCP server and webapp for Dreame robot vacuums via DreameHome cloud"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "fastmcp>=3.1.0",
+    "fastmcp>=3.2.0",
     "httpx>=0.27.0",
     "pydantic>=2.0.0",
     "fastapi>=0.104.0",
@@ -27,3 +27,44 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dreame_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = ["live: tests requiring real Dreame hoover (--live or DREAME_LIVE=1)"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "ruff>=0.15.9",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+# Hardened v13.1 Rule Set
+select = [
+    "E", "F", "I", "UP", "B", "S", "A", "ANN", "COM", "C4", "DTZ", "PIE", "T20", "PYI", "Q", "RSE", "RET", "SLF", "SIM", "TID", "ARG", "PTH", "ERA", "PD", "PGH", "PL", "TRY", "FLY", "PERF", "FURB", "LOG", "RUF"
+]
+ignore = [
+    "ANN101", # Missing type annotation for self
+    "ANN102", # Missing type annotation for cls
+    "COM812", # Trailing comma missing (handled by formatter)
+    "ISC001", # Single line implicit string concatenation (handled by formatter)
+    "PLR0913", # Too many arguments
+    "S101",   # Use of assert (standard for pytest)
+    "TRY003", # Avoid specifying long messages in exceptions
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "ANN", "PLR", "TRY", "S105", "S106", "SLF001", "ARG002", "PLC0415"]
+"server.py" = ["T20", "ARG001", "ARG002"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

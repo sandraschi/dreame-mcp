@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Dreame D20 Pro Plus MCP Server — FastMCP 3.1, DreameHome cloud, sampling, agentic workflow."""
 from __future__ import annotations
+
+import logging
 import os
 import sys
-import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -12,10 +13,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastmcp import FastMCP
 
-from .state import _state
+from .agentic import dreame_agentic_workflow
 from .client import client_from_env
 from .portmanteau import dreame_tool
-from .agentic import dreame_agentic_workflow
+from .state import _state
 
 logging.basicConfig(
     level=logging.INFO,
@@ -166,6 +167,99 @@ async def api_map():
     if not out.get("success"):
         raise HTTPException(status_code=502, detail=out.get("error", "Map unavailable"))
     return out
+
+
+@app.get("/api/v1/map/png")
+async def api_map_png():
+    """Download rendered map as PNG image (direct binary, not JSON-wrapped).
+
+    Returns the Tasshack-rendered floor plan PNG if available.
+    Consumers: webapp <img> src, robotics-mcp, yahboom-mcp pipelines.
+    """
+    from fastapi.responses import Response
+
+    from .map_export import map_response_to_png_bytes
+
+    out = await dreame_tool(ctx=None, operation="map")
+    if not out.get("success"):
+        raise HTTPException(status_code=502, detail=out.get("error", "Map unavailable"))
+    png = map_response_to_png_bytes(out)
+    if png is None:
+        raise HTTPException(status_code=404, detail="No rendered PNG available (render_error or deps missing)")
+    return Response(content=png, media_type="image/png", headers={
+        "Content-Disposition": "inline; filename=dreame_map.png",
+    })
+
+
+@app.get("/api/v1/map/pgm")
+async def api_map_pgm():
+    """Export map as PGM — ROS2 nav2_map_server standard format.
+
+    This is the raw occupancy grid image. Use with /api/v1/map/yaml for
+    a complete ROS2 map_server compatible map pair.
+
+    Note: Requires Tasshack map manager to decode rooms/grid. If decode
+    fails, returns 404 — use /api/v1/map for raw_b64 fallback.
+    """
+    from fastapi.responses import Response
+
+    from .map_export import occupancy_to_pgm
+
+    out = await dreame_tool(ctx=None, operation="map")
+    if not out.get("success"):
+        raise HTTPException(status_code=502, detail=out.get("error", "Map unavailable"))
+
+    # If we have rendered image, convert PNG → grayscale → PGM.
+    # For now, use the rendered PNG dimensions if available.
+    png_bytes = None
+    if "image" in out:
+        try:
+            import base64
+
+            from PIL import Image
+
+            png_bytes = base64.b64decode(out["image"])
+            img = Image.open(__import__("io").BytesIO(png_bytes)).convert("L")
+            w, h = img.size
+            # Convert to OccupancyGrid convention: white(255)=free(0), black(0)=occupied(100)
+            pixels = list(img.getdata())
+            occupancy = []
+            for p in pixels:
+                if p > 250:
+                    occupancy.append(0)       # free
+                elif p < 10:
+                    occupancy.append(100)     # occupied
+                else:
+                    occupancy.append(-1)      # unknown
+            pgm = occupancy_to_pgm(occupancy, w, h)
+            return Response(content=pgm, media_type="application/octet-stream", headers={
+                "Content-Disposition": "attachment; filename=dreame_map.pgm",
+            })
+        except Exception:
+            pass
+
+    raise HTTPException(status_code=404, detail="Cannot export PGM: map rendering unavailable")
+
+
+@app.get("/api/v1/map/yaml")
+async def api_map_yaml():
+    """Export map YAML metadata — ROS2 nav2_map_server companion to PGM.
+
+    Returns the YAML file that nav2_map_server loads alongside the PGM.
+    Default resolution: 0.05 m/pixel (standard for indoor SLAM).
+    """
+    from fastapi.responses import Response
+
+    from .map_export import occupancy_to_yaml
+
+    yaml_str = occupancy_to_yaml(
+        image_filename="dreame_map.pgm",
+        resolution=0.05,
+        origin=(0.0, 0.0, 0.0),
+    )
+    return Response(content=yaml_str, media_type="text/yaml", headers={
+        "Content-Disposition": "attachment; filename=dreame_map.yaml",
+    })
 
 
 @app.post("/api/v1/control/{cmd}")
