@@ -1,13 +1,24 @@
+/* biome-ignore lint/suspicious/noUnknownAtRules: Tailwind at-rules are expected */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: dark; }
-*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-html, body, #root {
-  width: 100%;
-  height: 100%;
-  font-family: system-ui, -apple-system, sans-serif;
-  background-color: #0a0a0c;
-  color: #e2e8f0;
+:root {
+	color-scheme: dark;
+}
+*,
+*::before,
+*::after {
+	margin: 0;
+	padding: 0;
+	box-sizing: border-box;
+}
+html,
+body,
+#root {
+	width: 100%;
+	height: 100%;
+	font-family: system-ui, -apple-system, sans-serif;
+	background-color: #0a0a0c;
+	color: #e2e8f0;
 }

@@ -51,21 +51,35 @@ Protocol layer extracted from [Tasshack/dreame-vacuum](https://github.com/Tassha
 | `DREAME_REF_PATH` |  | Path to tasshack ref clone (default: `D:/Dev/repos/tasshack_dreame_vacuum_ref`) |
 | `DREAME_MCP_PORT` |  | Backend port (default: `10894`) |
 
+## Connection Modes
+
+This server supports three operational modes depending on your `.env` configuration:
+
+| Mode | Credentials | Commands | Lidar Map | Notes |
+| :--- | :--- | :---: | :---: | :--- |
+| **Local** | `DREAME_IP` | ⚡ Local | ❌ No | Uses the **Null Token trick** (`000...000`) |
+| **Cloud** | `USER` + `PWD` | ☁️ Cloud | ✅ Yes | Subject to cloud latency and API rate limits |
+| **Hybrid** | **Both** | ⚡ **Local** | ✅ **Yes** | **Recommended**: Fast control + Full visual map |
+
+### The "Null Token" Trick (Bypass)
+
+For users avoiding the DreameHome cloud for controls, you do not need to extract a secret 32-character token. By providing only the `DREAME_IP`, the backend automatically uses a **Null Token** (`32 zeros`). This works on many bridged or circumvention-ready firmwares (like those used with the Tasshack protocol).
+
 ## Setup
 
-```powershell
-# Set credentials (or use a .env file)
-$env:DREAME_USER = "your@email.com"
-$env:DREAME_PASSWORD = "yourpassword"
-$env:DREAME_COUNTRY = "eu"
+1. **Configure credentials**: Copy `.env.example` to `.env` and fill in your details.
+   ```powershell
+   # Typical Hybrid Setup (.env)
+   DREAME_IP=192.168.0.179
+   DREAME_USER=your@email.com
+   DREAME_PASSWORD=yourpassword
+   ```
 
-# Start backend
-uv run python -m dreame_mcp --mode dual --port 10894
-
-# Start webapp (separate terminal)
-cd webapp
-.\start.ps1
-```
+2. **Start the system**:
+   ```powershell
+   # Start backend + webapp together
+   .\webapp\start.ps1
+   ```
 
 ## MCP client config
 

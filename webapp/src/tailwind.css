@@ -1,1 +1,2 @@
+/* biome-ignore lint/suspicious/noUnknownAtRules: Tailwind at-rules are expected */
 @import "tailwindcss";

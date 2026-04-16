@@ -6,6 +6,7 @@ Covers:
     - Mocked: map export to PNG (direct download)
     - Live: real map fetch from DreameHome cloud (IRL only)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -31,8 +32,8 @@ class TestMapFetchMocked:
         """Map fetch returns base64 PNG + raw_b64 + map_data."""
         result = await dreame_tool(ctx=None, operation="map")
         assert result["success"] is True
-        assert "image" in result           # rendered PNG
-        assert "raw_b64" in result         # raw fallback
+        assert "image" in result  # rendered PNG
+        assert "raw_b64" in result  # raw fallback
         assert "map_data" in result
         assert result["map_data"]["rooms"] == 3
         assert result["raw_bytes"] > 0
@@ -252,7 +253,7 @@ def _occupancy_to_pgm(data: list[int], width: int, height: int) -> bytes:
     buf.write(f"P5\n{width} {height}\n255\n".encode())
     for val in data:
         if val == -1:
-            buf.write(bytes([205]))   # unknown → mid-gray
+            buf.write(bytes([205]))  # unknown → mid-gray
         elif val >= 0:
             pixel = int(254 * (1.0 - val / 100.0))
             buf.write(bytes([max(0, min(254, pixel))]))

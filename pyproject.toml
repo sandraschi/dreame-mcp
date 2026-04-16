@@ -19,6 +19,9 @@ dependencies = [
     "Pillow>=10.0.0",
     "cryptography>=42.0.0",
     "py-mini-racer>=0.6.0",
+    "python-dotenv>=1.2.2",
+    "python-miio>=0.5.12",
+    "prefab-ui>=0.14.0",
 ]
 
 [build-system]
