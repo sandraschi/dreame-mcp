@@ -1,7 +1,7 @@
 [project]
 name = "dreame-mcp"
 version = "0.2.0"
-description = "FastMCP 3.2 MCP server and webapp for Dreame robot vacuums via DreameHome cloud"
+description = "FastMCP 3.2.0 MCP server and webapp for Dreame robot vacuums via DreameHome cloud"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

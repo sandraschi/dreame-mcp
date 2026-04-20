@@ -1,6 +1,8 @@
 # Dreame D20 Pro Plus MCP Server
 
-FastMCP 3.1 MCP server and webapp for the **Dreame D20 Pro Plus** robot vacuum.
+[![FastMCP Version](https://img.shields.io/badge/FastMCP-3.2.0-blue?style=flat-square&logo=python&logoColor=white)](https://github.com/sandraschi/fastmcp) [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff) [![Linted with Biome](https://img.shields.io/badge/Linted_with-Biome-60a5fa?style=flat-square&logo=biome&logoColor=white)](https://biomejs.dev/) [![Built with Just](https://img.shields.io/badge/Built_with-Just-000000?style=flat-square&logo=gnu-bash&logoColor=white)](https://github.com/casey/just)
+
+FastMCP 3.2.0 MCP server and webapp for the **Dreame D20 Pro Plus** robot vacuum.
 Uses the **DreameHome cloud API**  no local token or miio required.
 Protocol layer extracted from [Tasshack/dreame-vacuum](https://github.com/Tasshack/dreame-vacuum).
 
@@ -113,3 +115,14 @@ If `dreame(operation='map')` returns `render_error`, decoding deps may be missin
 - [Map and fleet robotics](docs/MAP_AND_ROBOTICS.md)  HTTP/MCP consumption, miIO vs cloud, yahboom / robotics integration
 - [PRD](docs/PRD.md)  product context, ports, **5 Map API contract**
 - [Token and Home Assistant](docs/TOKEN_AND_HOME_ASSISTANT.md)  historical miIO reference (v0.2+ uses cloud)
+
+
+## 🛡️ Industrial Quality Stack
+
+This project adheres to **SOTA 14.1** industrial standards for high-fidelity agentic orchestration:
+
+- **Python (Core)**: [Ruff](https://astral.sh/ruff) for linting and formatting. Zero-tolerance for `print` statements in core handlers (`T201`).
+- **Webapp (UI)**: [Biome](https://biomejs.dev/) for sub-millisecond linting. Strict `noConsoleLog` enforcement.
+- **Protocol Compliance**: Hardened `stdout/stderr` isolation to ensure crash-resistant JSON-RPC communication.
+- **Automation**: [Justfile](./justfile) recipes for all fleet operations (`just lint`, `just fix`, `just dev`).
+- **Security**: Automated audits via `bandit` and `safety`.

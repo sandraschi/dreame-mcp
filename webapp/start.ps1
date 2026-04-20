@@ -1,3 +1,13 @@
+﻿Param([switch]$Headless)
+
+# --- SOTA Headless Standard ---
+if ($Headless -and ($Host.UI.RawUI.WindowTitle -notmatch 'Hidden')) {
+    Start-Process pwsh -ArgumentList '-NoProfile', '-File', $PSCommandPath, '-Headless' -WindowStyle Hidden
+    exit
+}
+$WindowStyle = if ($Headless) { 'Hidden' } else { 'Normal' }
+# ------------------------------
+
 # Dreame D20 Pro Plus MCP - backend + webapp startup
 # Ports: 10794 backend (MCP SSE + REST), 10895 frontend (Vite)
 # Requires: Windows PowerShell 5.1+, uv, Node/npm
@@ -186,5 +196,6 @@ Start-Process powershell -ArgumentList "-NoProfile", "-WindowStyle", "Hidden", "
     Stop-Tracked
     Write-Host "[DONE] Dreame MCP stopped." -ForegroundColor Green
 }
+
 
 
