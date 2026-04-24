@@ -6,11 +6,18 @@ All notable changes to dreame-mcp are documented here.
 
 ## [Unreleased]
 
+### Fixed — LIDAR map (download + image)
+
+- **Signed-URL download first** (`get_interim_file_url` / `get_file`), matching Tasshack / Home Assistant; `get_device_file` is fallback only.
+- **Decode/render** — use `DreameVacuumMapDecoder` + `DreameVacuumMapRenderer` (the map manager class does not expose `decode_map` / `render_map` on the instance). Dashboard **Map** page shows the image when this path succeeds.
+- **Bootstrap** — Tasshack package stubs set `__path__` so `dreame.types` / `map` import; **`DreameHomeClient` always initializes** `self._map_renderer` in `__init__`.
+- **Locks / timeout** — serialized map fetches; `MAP_FETCH_TIMEOUT` 60s for the combined pipeline (see `tests/test_map.py`).
+
 ### Fixed — LIDAR map download hang (critical)
 
-- **`asyncio.wait_for()` on all `run_in_executor` calls**: `get_map()` (45s), `get_status()` / `control()` (35s), `connect()` (30s). Previously, any cloud timeout cascaded into indefinite blocking of the REST endpoint and MCP tool.
+- **`asyncio.wait_for()` on all `run_in_executor` calls**: `get_map()` (60s), `get_status()` / `control()` (35s), `connect()` (30s). Previously, any cloud timeout cascaded into indefinite blocking of the REST endpoint and MCP tool.
 - **Fail-fast file-type loop**: Map fetch now bails after 2 cloud failures instead of exhausting all 4 type variants (was up to 60s cumulative per attempt).
-- **Removed broken `get_properties(["6.3"])` live object_name lookup**: Tasshack `get_properties()` returns a different response shape than expected; the code always fell through silently. Now uses `protocol.object_name` directly.
+- **Object name for map**: `get_properties` for `OBJECT_NAME` (6.3) when the API returns data; otherwise `protocol.object_name`.
 - **Thread pool increased from 2 to 4**: Prevents deadlock when concurrent map + status calls both block on cloud I/O.
 - **Frontend `AbortController` + timeout**: `api.ts` now aborts all fetch calls after 15s (50s for map), preventing infinite spinner in the webapp.
 - **Map page timeout UX**: `Map.tsx` shows distinct timeout indicator (blue clock icon) with retry guidance instead of generic error.
@@ -31,8 +38,10 @@ All notable changes to dreame-mcp are documented here.
 - Added `docs/MAP_AND_ROBOTICS.md` (map vs miIO, `/api/v1/map` JSON contract, fleet use with robotics-mcp / yahboom-mcp).
 - `docs/PRD.md` — §5 Map API contract; renumbered sections; fleet map purpose clarified.
 - `docs/TOKEN_AND_HOME_ASSISTANT.md` — v0.2+ cloud-first note; miIO doc marked historical.
-- README — map section, ports **10894**, links to PRD/MAP_AND_ROBOTICS.
-- **Webapp:** Help — new **Map API** tab; Connection methods icon; troubleshooting map line; Settings aligned with cloud env vars and `VITE_*` overrides.
+- README — map section (signed-URL + decoder/renderer, dashboard Map page), ports **10894**, links to PRD/MAP_AND_ROBOTICS.
+- **docs/MAP_AND_ROBOTICS.md** — end-to-end pipeline section.
+- **docs/PRD.md** — architecture diagram + map table for decode/render; known-issue row for r2566a map.
+- **Webapp:** Help — new **Map API** tab; Connection methods icon; troubleshooting map line; Settings aligned with cloud env vars and `VITE_*` overrides. **webapp/README** — dreame dashboard overview and proxy note.
 
 ### Central docs mirror
 

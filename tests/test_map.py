@@ -178,7 +178,7 @@ class TestClientTimeouts:
     """Verify timeout constants are sensible."""
 
     def test_map_timeout_value(self):
-        assert MAP_FETCH_TIMEOUT == 45
+        assert MAP_FETCH_TIMEOUT == 60
 
     def test_executor_pool_size(self):
         client = DreameHomeClient("user", "pass")

@@ -1,7 +1,7 @@
 # Dreame D20 Pro Plus MCP Server
 
 FastMCP 3.1 MCP server and webapp for the **Dreame D20 Pro Plus** robot vacuum.
-Uses the **DreameHome cloud API**  no local token or miio required.
+Uses the **DreameHome cloud API**; no local token or miio required.
 Protocol layer extracted from [Tasshack/dreame-vacuum](https://github.com/Tasshack/dreame-vacuum).
 
 ## Features
@@ -82,17 +82,21 @@ cd webapp
 
 ## Map (LIDAR / floor plan)
 
-**Map data does not require miIO** on this server: it uses DreameHome cloud + the Tasshack map layer from `DREAME_REF_PATH`. Local miIO is optional and often unavailable on DreameHome-only firmware.
+**Map data does not require miIO** on this server: it uses DreameHome cloud + the Tasshack ref at `DREAME_REF_PATH`. Local miIO is optional and often unavailable on DreameHome-only firmware.
 
 - **REST:** `GET http://localhost:10894/api/v1/map` (same JSON as MCP `dreame(operation='map')`).
-- **Fields:** `image` (base64 PNG when render works), `raw_b64` (always present when fetch succeeds  use for custom decoders or **robotics-mcp / yahboom-mcp** pipelines), optional `map_data` / `render_error`.
+- **Fields:** `image` (base64-encoded image when decode/render works), `raw_b64` (always on successful cloud fetch; use for custom decoders or **robotics-mcp / yahboom-mcp**), optional `map_data`, optional `render_error` if the PNG path failed.
+- **Dashboard:** **Map** page at `http://localhost:10895` shows the image when `image` is present.
 
-See **[docs/MAP_AND_ROBOTICS.md](docs/MAP_AND_ROBOTICS.md)** for fleet integration, CORS, and operational notes.
+**Download path (cloud):** matches Home Assistant’s Tasshack integration — resolve **`OBJECT_NAME`** (property 6.3) when available, then **`get_interim_file_url` / `get_file`** (signed object storage). **`get_device_file`** is only a fallback; it often returns `80001` if the cloud cannot reach the device at that moment.
 
-### Map rendering (PNG)
+**Render path:** raw bytes are decoded with **`DreameVacuumMapDecoder.decode_map`** and drawn with **`DreameVacuumMapRenderer.render_map`** (not `DreameMapVacuumMapManager` methods, which only orchestrate HA state). The ref clone’s `custom_components.…` packages are given proper `__path__` at load time so `map.py` imports cleanly.
 
-Rendered PNG requires the Tasshack dependency chain: `py-mini-racer`, `numpy`, `Pillow`, `cryptography`, etc.
-If `dreame(operation='map')` returns `render_error`, decoding deps may be missing; **`raw_b64`** is still the portable fallback.
+See **[docs/MAP_AND_ROBOTICS.md](docs/MAP_AND_ROBOTICS.md)** for fleet integration, the JSON contract, and operations.
+
+### Map rendering (dependencies)
+
+The rendered image requires the Tasshack stack: `py-mini-racer`, `numpy`, `Pillow`, `cryptography`, and related pins from `uv.lock`. If `dreame(operation='map')` has `render_error` but `raw_b64` is set, the fetch worked and only decode/render failed; check logs and dependencies.
 
 ## Docs
 

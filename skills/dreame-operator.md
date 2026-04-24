@@ -22,7 +22,7 @@ No local token or miio required — all communication goes via the DreameHome cl
 - **dreame(operation, param1, param2, payload)** — Single operation:
   - `status` — battery %, state, charging, cleaned area (m²), time (s)
   - `battery` — battery % only
-  - `map` — LIDAR map: JSON with `raw_b64` (always on success) + optional `image` (PNG base64). Same as `GET /api/v1/map` for robotics-mcp / yahboom-mcp. See repo `docs/MAP_AND_ROBOTICS.md`.
+  - `map` — LIDAR map: JSON with `raw_b64` (on successful cloud download) + optional `image` (base64 render from Tasshack decoder + `DreameVacuumMapRenderer`). Same as `GET /api/v1/map`. See `docs/MAP_AND_ROBOTICS.md`.
   - `start_clean` — start full clean ✅ confirmed
   - `stop` — stop cleaning
   - `pause` — pause cleaning
@@ -44,7 +44,7 @@ No local token or miio required — all communication goes via the DreameHome cl
 1. Always call `dreame(operation='status')` before starting a clean to verify battery > 20%.
 2. Do NOT attempt `go_home` — it is currently broken. Tell the user to dock via the DreameHome app.
 3. Prefer `dreame_agentic_workflow` for multi-step goals (e.g. "clean then dock").
-4. Map data requires MQTT connection. If `/api/v1/health` shows `connected: false`, map will fail.
+4. Map **download** uses DreameHome (signed-URL path first). MQTT helps live updates but is not strictly required for a one-off map fetch if the cloud can resolve the file.
 5. The MCP server runs in stub mode if `DREAME_USER`/`DREAME_PASSWORD` are not set — all
    operations return fake data. Check health endpoint first.
 6. Map rendering requires `py-mini-racer` + `numpy` + `Pillow`. If unavailable, `raw_b64` is
@@ -52,5 +52,5 @@ No local token or miio required — all communication goes via the DreameHome cl
 
 ## Known issues
 - `go_home` returns success but robot does not dock — aiid mapping needs investigation
-- Map decode untested against actual r2566a map format
+- Map decode/render: signed-URL + Tasshack decoder path verified for r2566a; if only `raw_b64` appears, check `render_error` and Python deps
 - Auth key not persisted — server re-auths on every restart (adds ~3s to startup)

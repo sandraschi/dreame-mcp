@@ -1,4 +1,4 @@
-"""DreameHome cloud client wrapping Tasshack dreame-vacuum protocol + map layers.
+﻿"""DreameHome cloud client wrapping Tasshack dreame-vacuum protocol + map layers.
 
 Loads protocol.py and map.py from the ref clone at DREAME_REF_PATH (or auto-detected
 sibling directory tasshack_dreame_vacuum_ref). Stubs out miio/HA imports so the
@@ -18,9 +18,11 @@ from __future__ import annotations
 import asyncio
 import base64
 import importlib.util
+import json
 import logging
 import os
 import sys
+import threading
 import types as _types
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -34,7 +36,7 @@ logger = logging.getLogger("dreame-mcp.client")
 # ---------------------------------------------------------------------------
 
 EXECUTOR_TIMEOUT = 35  # max wall-clock for any run_in_executor call
-MAP_FETCH_TIMEOUT = 45  # map can be slow — higher ceiling
+MAP_FETCH_TIMEOUT = 60  # URL + optional get_device_file fallback; avoid racing the asyncio guard
 CONNECT_TIMEOUT = 30  # login + MQTT setup
 
 # ---------------------------------------------------------------------------
@@ -45,7 +47,9 @@ _REF_DEFAULT = Path("D:/Dev/repos/tasshack_dreame_vacuum_ref")
 _DREAME_PKG = "custom_components.dreame_vacuum.dreame"
 
 _protocol_cls = None   # DreameVacuumDreameHomeCloudProtocol
-_map_manager_cls = None  # DreameVacuumMapManager (optional, heavy)
+_map_manager_cls = None  # DreameMapVacuumMapManager (optional, heavy)
+_map_decoder_cls = None  # DreameVacuumMapDecoder (static decode_map on map.py)
+_map_renderer_cls = None  # DreameVacuumMapRenderer (render_map → bytes)
 
 
 def _stub_miio():
@@ -82,24 +86,30 @@ def _load_module(name: str, path: Path):
 
 def _bootstrap_tasshack(ref_path: Path):
     """Load protocol + map from the ref clone. Idempotent."""
-    global _protocol_cls, _map_manager_cls
+    global _protocol_cls, _map_manager_cls, _map_decoder_cls, _map_renderer_cls
 
     if _protocol_cls is not None:
         return  # already loaded
 
-    dreame_dir = ref_path / "custom_components" / "dreame_vacuum" / "dreame"
+    cc_dir = ref_path / "custom_components"
+    dv_dir = cc_dir / "dreame_vacuum"
+    dreame_dir = dv_dir / "dreame"
     if not dreame_dir.exists():
         raise RuntimeError(f"Tasshack ref clone not found at: {dreame_dir}")
 
     _stub_miio()
     _stub_ha()
 
-    # Parent stubs so relative imports in protocol.py work
-    for pkg in ["custom_components",
-                "custom_components.dreame_vacuum",
-                _DREAME_PKG]:
-        if pkg not in sys.modules:
-            sys.modules[pkg] = _types.ModuleType(pkg)
+    # Package stubs with __path__ so submodules (e.g. .types) resolve — a bare
+    # ModuleType without __path__ is "not a package" and map.py fails to import.
+    for name, p in [
+        ("custom_components", cc_dir),
+        ("custom_components.dreame_vacuum", dv_dir),
+        (_DREAME_PKG, dreame_dir),
+    ]:
+        m = sys.modules.get(name) or _types.ModuleType(name)
+        m.__path__ = [str(p)]
+        sys.modules[name] = m
 
     # Load exceptions (no deps)
     exc_mod = _load_module(f"{_DREAME_PKG}.exceptions", dreame_dir / "exceptions.py")
@@ -127,10 +137,14 @@ def _bootstrap_tasshack(ref_path: Path):
             getattr(map_mod, "DreameMapVacuumMapManager", None)
             or getattr(map_mod, "DreameVacuumMapManager", None)
         )
+        _map_decoder_cls = getattr(map_mod, "DreameVacuumMapDecoder", None)
+        _map_renderer_cls = getattr(map_mod, "DreameVacuumMapRenderer", None)
         logger.info("Tasshack map module loaded OK (map rendering available)")
     except Exception as e:
         logger.warning("Tasshack map module load failed — map rendering unavailable: %s", e)
         _map_manager_cls = None
+        _map_decoder_cls = None
+        _map_renderer_cls = None
 
     logger.info("Tasshack protocol loaded from %s", ref_path)
 
@@ -213,6 +227,9 @@ class DreameHomeClient:
         self._protocol = None
         self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="dreame")
         self._map_manager = None
+        self._map_renderer = None
+        # Serialize map downloads — dashboard + Status poll can overlap and starve the pool / hit 45s+ timeouts
+        self._map_fetch_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -283,6 +300,12 @@ class DreameHomeClient:
                 logger.info("Map manager initialized")
             except Exception as e:
                 logger.warning("Map manager init failed: %s", e)
+        if _map_renderer_cls is not None and self._map_renderer is None:
+            try:
+                # low_resolution: faster, less memory (same flags as many HA configs)
+                self._map_renderer = _map_renderer_cls(low_resolution=True, cache=True)
+            except Exception as e:
+                logger.warning("DreameVacuumMapRenderer init failed: %s", e)
 
         return True
 
@@ -402,6 +425,73 @@ class DreameHomeClient:
     # Map — the critical path that was hanging
     # ------------------------------------------------------------------
 
+    def _resolve_live_map_object_name(self) -> str | None:
+        """HA map.py: prefer OBJECT_NAME from get_properties(6.3) over the model/uid/did/0 string alone."""
+        proto = self._protocol
+        if proto is None:
+            return None
+        if getattr(proto, "dreame_cloud", True):
+            try:
+                from custom_components.dreame_vacuum.dreame.const import MAP_PARAMETER_VALUE
+                from custom_components.dreame_vacuum.dreame.types import DIID, DreameVacuumProperty
+
+                r = proto.get_properties(DIID(DreameVacuumProperty.OBJECT_NAME))
+                if r and len(r) > 0:
+                    first = r[0]
+                    val = first.get(MAP_PARAMETER_VALUE) or first.get("value")
+                    if val is not None:
+                        if isinstance(val, (list, tuple)) and val:
+                            return str(val[0])
+                        if isinstance(val, str):
+                            s = val.strip()
+                            if s.startswith("["):
+                                j = json.loads(s)
+                                if isinstance(j, (list, tuple)) and j:
+                                    return str(j[0])
+                            return s
+            except Exception as e:
+                logger.debug("get_properties(OBJECT_NAME): %s", e)
+        on = getattr(proto, "object_name", None)
+        if on:
+            return str(on).strip()
+        return None
+
+    def _fetch_map_bytes_from_cloud_url(self, object_name: str) -> bytes | None:
+        """Same order as Tasshack map._get_interim_file_data: interim URL, then get_file; not get_device_file."""
+        proto = self._protocol
+        u: Any = None
+        try:
+            u = proto.get_interim_file_url(object_name)  # type: ignore[union-attr]
+        except Exception as e:
+            logger.debug("get_interim_file_url: %s", e)
+        if u is not None and not (isinstance(u, str) and (u or "").strip().lower().startswith("http")):
+            if isinstance(u, dict):
+                u2 = (u or {}).get("url") or (u or {}).get("fileUrl")
+                u = u2 if isinstance(u2, str) else None
+            else:
+                u = None
+        if not u and hasattr(proto, "get_file_url"):
+            o = object_name if str(object_name).startswith("/") else f"/{object_name}"
+            try:
+                d = proto.get_file_url(o)
+            except Exception as e:
+                logger.debug("get_file_url: %s", e)
+                d = None
+            if isinstance(d, dict):
+                u = d.get("url") or d.get("fileUrl")
+            elif isinstance(d, str) and d.strip().lower().startswith("http"):
+                u = d
+        if not u or not str(u).strip().lower().startswith("http"):
+            return None
+        try:
+            raw = proto.get_file(str(u).strip())
+        except Exception as e:
+            logger.warning("get_file(signed URL) failed: %s", e)
+            return None
+        if not raw or _map_bytes_looks_like_error_json(raw):
+            return None
+        return raw
+
     async def get_map(self) -> dict:
         """Fetch and decode the current map. Returns base64 PNG if rendering works.
 
@@ -424,116 +514,131 @@ class DreameHomeClient:
             }
 
     def _get_map_sync(self) -> dict:
-        if not self._protocol:
-            return {"success": False, "error": "Not connected"}
-        try:
-            # Get the object_name from the protocol's computed property.
-            # NOTE: Previously tried get_properties(["6.3"]) for live lookup,
-            # but the Tasshack API response shape doesn't match simple dict key
-            # lookup. The computed object_name (model/uid/did/0) is the reliable path.
-            object_name = getattr(self._protocol, "object_name", None)
+        with self._map_fetch_lock:
+            if not self._protocol:
+                return {"success": False, "error": "Not connected"}
+            try:
+                object_name = self._resolve_live_map_object_name()
+                if not object_name or not str(object_name).strip("/"):
+                    return {
+                        "success": False,
+                        "error": "object_name unavailable (map not published yet or cloud property lookup failed)",
+                    }
+                object_name = str(object_name).strip()
+                logger.info("Map fetch: object_name=%s (signed-URL first; get_device_file fallback)", object_name)
+                attempted: list[dict[str, str]] = []
+                raw: bytes | None = self._fetch_map_bytes_from_cloud_url(object_name)
+                if raw:
+                    logger.info("Map fetch: %d bytes via get_interim_file_url / get_file (Home Assistant path)", len(raw))
+                    attempted.append({"step": "get_interim_file_url+get_file", "object_name": object_name})
+                for file_type in ("map", 0):
+                    if raw is not None:
+                        break
+                    step = f"get_device_file:{file_type!s}"
+                    attempted.append({"step": step, "object_name": object_name})
+                    try:
+                        chunk = self._protocol.get_device_file(object_name, file_type)
+                    except Exception as e:
+                        logger.warning("Map %s: %s", step, e)
+                        continue
+                    if chunk is not None and not _map_bytes_looks_like_error_json(chunk):
+                        raw = chunk
+                        logger.info("Map fetch: %s -> %d bytes", step, len(raw))
+                        break
 
-            if not object_name or not str(object_name).strip("/"):
-                return {
-                    "success": False,
-                    "error": "object_name unavailable (map not published yet or cloud property lookup failed)",
+                if raw is None or _map_bytes_looks_like_error_json(raw):
+                    return {
+                        "success": False,
+                        "error": "Map fetch failed (signed URL and device file both failed)",
+                        "diagnostic_info": {
+                            "did": str(self._did),
+                            "country": getattr(self._protocol, "_country", None),
+                            "object_name": object_name,
+                            "attempted": attempted,
+                            "hint": "get_device_file often returns 80001 (cloud cannot reach the vac). This path uses a signed-URL download first, like Home Assistant. Wake the robot, open the Dreame app on the same account, then retry; confirm DREAME_COUNTRY and DREAME_DID match the app.",
+                        },
+                    }
+
+                result: dict[str, Any] = {
+                    "success": True,
+                    "object_name": object_name,
+                    "raw_bytes": len(raw),
                 }
 
-            object_name = str(object_name).strip()
-            logger.info("Map fetch: object_name=%s", object_name)
+                if _map_decoder_cls and self._map_renderer:
+                    try:
+                        # Map manager is not a decoder: use DreameVacuumMapDecoder + DreameVacuumMapRenderer
+                        # (Home Assistant map camera), not manager.decode_map.
+                        raw_str = _map_raw_bytes_to_str(raw)
+                        mm = self._map_manager
+                        vslam = bool(getattr(mm, "_vslam_map", False)) if mm is not None else False
+                        aes_iv = getattr(mm, "_aes_iv", None) if mm is not None else None
+                        decoded = _map_decoder_cls.decode_map(raw_str, vslam, 0, aes_iv, None)
+                        map_data = None
+                        if isinstance(decoded, tuple) and len(decoded) > 0:
+                            map_data = decoded[0]
+                        elif decoded is not None:
+                            map_data = decoded
+                        if map_data is not None:
+                            out = self._map_renderer.render_map(map_data, 0, 0)
+                            if out:
+                                result["image"] = base64.b64encode(out).decode()
+                                result["map_data"] = {
+                                    "rooms": len(getattr(map_data, "segments", {}) or {}),
+                                    "robot_position": _point_to_dict(getattr(map_data, "robot_position", None)),
+                                    "charger_position": _point_to_dict(getattr(map_data, "charger_position", None)),
+                                }
+                        else:
+                            result["render_error"] = "decode_map returned no MapData (partial decode failed or wrong key)"
+                    except Exception as e:
+                        logger.warning("Map decode/render failed: %s", e)
+                        result["render_error"] = str(e)
+                else:
+                    missing: list[str] = []
+                    if not _map_decoder_cls or not _map_renderer_cls:
+                        missing.append("Tasshack map import")
+                    if self._map_renderer is None and _map_renderer_cls:
+                        missing.append("renderer init")
+                    result["render_error"] = "Map PNG unavailable: " + (", ".join(missing) or "unknown")
 
-            # Fetch raw map file from cloud.
-            # Different firmwares/backends require different `type` values.
-            # Fail fast: stop after first cloud error (not timeout) to avoid
-            # cumulative 60s+ blocking on 4 variants.
-            raw = None
-            attempted: list[dict[str, str]] = []
-            fail_count = 0
-            max_fails = 2  # bail after 2 cloud failures — don't try all 4
+                result["raw_b64"] = base64.b64encode(raw).decode()
+                return result
 
-            for file_type in ("map", 0, "0", object_name):
-                if fail_count >= max_fails:
-                    logger.warning("Map fetch: %d cloud failures, skipping remaining type variants", fail_count)
-                    break
-                try:
-                    attempted.append({"filename": object_name, "type": str(file_type)})
-                    logger.debug("Map fetch: trying type=%s", file_type)
-                    raw = self._protocol.get_device_file(object_name, file_type)
-                except Exception as e:
-                    logger.warning("Map fetch type=%s failed: %s", file_type, e)
-                    raw = None
-                    fail_count += 1
-                if raw is not None:
-                    logger.info("Map fetch: success with type=%s (%d bytes)", file_type, len(raw))
-                    break
-
-            # Signed URL fallback (some backends don't allow direct file fetch)
-            if raw is None:
-                try:
-                    obj_for_url = object_name if object_name.startswith("/") else f"/{object_name}"
-                    url_data = self._protocol.get_file_url(obj_for_url)
-                    url = None
-                    if isinstance(url_data, dict):
-                        url = url_data.get("url") or url_data.get("fileUrl")
-                    if isinstance(url, str) and url.strip():
-                        attempted.append({"filename": obj_for_url, "type": "signed_url"})
-                        logger.info("Map fetch: trying signed URL")
-                        raw = self._protocol.get_file(url.strip())
-                except Exception as e:
-                    logger.warning("Map fetch signed URL failed: %s", e)
-                    raw = None
-
-            if raw is None:
-                return {
-                    "success": False,
-                    "error": "Map fetch failed (cloud returned no file data)",
-                    "diagnostic_info": {
-                        "did": str(self._did),
-                        "country": getattr(self._protocol, "_country", None),
-                        "object_name": object_name,
-                        "attempted": attempted,
-                        "hint": "If this persists, ensure the robot has created a map, and that DREAME_COUNTRY/DREAME_DID are correct.",
-                    },
-                }
-
-            result: dict[str, Any] = {
-                "success": True,
-                "object_name": object_name,
-                "raw_bytes": len(raw),
-            }
-
-            # Decode + render via map manager if available
-            if self._map_manager is not None:
-                try:
-                    map_data = self._map_manager.decode_map(raw)
-                    if map_data:
-                        image = self._map_manager.render_map(map_data)
-                        if image:
-                            import io
-                            buf = io.BytesIO()
-                            image.save(buf, format="PNG")
-                            result["image"] = base64.b64encode(buf.getvalue()).decode()
-                            result["map_data"] = {
-                                "rooms": len(getattr(map_data, "segments", {}) or {}),
-                                "robot_position": _point_to_dict(getattr(map_data, "robot_position", None)),
-                                "charger_position": _point_to_dict(getattr(map_data, "charger_position", None)),
-                            }
-                except Exception as e:
-                    logger.warning("Map decode/render failed: %s", e)
-                    result["render_error"] = str(e)
-
-            # Always return raw as base64 fallback
-            result["raw_b64"] = base64.b64encode(raw).decode()
-            return result
-
-        except Exception as e:
-            logger.exception("get_map failed")
-            return {"success": False, "error": str(e)}
+            except Exception as e:
+                logger.exception("get_map failed")
+                return {"success": False, "error": str(e)}
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _map_raw_bytes_to_str(raw: bytes) -> str:
+    """Tasshack `decode_map` expects a str; cloud files are typically UTF-8 or Latin-1–safe text."""
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("latin-1")
+
+
+def _map_bytes_looks_like_error_json(raw: bytes | None) -> bool:
+    """True if cloud returned a JSON error body instead of a map blob (HTTP 200+error is possible)."""
+    if not raw or len(raw) < 2 or raw[0:1] != b"{":
+        return False
+    try:
+        j = json.loads(raw.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return False
+    if not isinstance(j, dict):
+        return False
+    if j.get("success") is False:
+        return True
+    c = j.get("code")
+    if c is not None and c not in (0, "0"):
+        return True
+    return False
+
 
 def _point_to_dict(point) -> dict | None:
     if point is None:

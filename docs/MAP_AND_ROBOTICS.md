@@ -2,9 +2,18 @@
 
 This document describes how **floor map / LIDAR-related data** is obtained in dreame-mcp and how other automation stacks can consume it **without miIO**.
 
+## End-to-end pipeline (current implementation)
+
+1. **Auth** — `DreameHomeClient` logs in and connects MQTT (optional for map).
+2. **Object name** — Prefer **`get_properties` on `OBJECT_NAME` (6.3)**; fall back to the protocol’s computed `object_name` string (`model/uid/did/0`).
+3. **Download (preferred)** — **`get_interim_file_url(object_name)`** (or `get_file_url` as fallback) then **`get_file(url)`** to pull the map blob from signed URLs — same order as Tasshack’s `map._get_interim_file_data` / Home Assistant map camera.
+4. **Download (fallback)** — `get_device_file` with a small set of `type` values. Cloud may return `80001` (device not reachable) here even when the signed-URL path works.
+5. **Render** — Raw bytes → str → **`DreameVacuumMapDecoder.decode_map`**, then **`DreameVacuumMapRenderer.render_map`**; base64 the returned **image bytes** into the JSON **`image`** field. `DreameMapVacuumMapManager` is used for IV/vslam context when present; it is **not** the public decode/render API.
+6. **Concurrency** — Map fetches are serialized with a lock so the dashboard and `/api` do not overlap long-running downloads.
+
 ## Does the map require miIO?
 
-**No.** Map retrieval uses the **DreameHome cloud** path: authenticated session, device properties (including live `OBJECT_NAME`), then file fetch and optional decode/render via the Tasshack map layer loaded from `DREAME_REF_PATH`.
+**No.** Map retrieval uses the **DreameHome cloud** path: authenticated session, `OBJECT_NAME` / file URLs as above, then optional decode/render via the Tasshack ref at `DREAME_REF_PATH`.
 
 Local **miIO** (`DREAME_IP` + token) is a **different** integration path used by some Xiaomi-ecosystem vacuums. On many DreameHome-only firmwares (including typical D20 Pro Plus setups), local miIO is unavailable or incomplete. This server’s primary path is cloud-based.
 
@@ -23,7 +32,7 @@ With the backend running (default **10894**):
 FastAPI returns one `application/json` body. Map payloads are **embedded as base64 strings** inside that JSON (standard pattern for “binary in JSON” APIs).
 
 - **`raw_b64`** — Always present on **success**: base64 encoding of the **raw map file bytes** from Dreame cloud (the same blob the Tasshack stack would decode). Consumers that implement their own decoder or only need the archive should use this.
-- **`image`** — Optional: base64-encoded **PNG** bytes (no `data:image/png;base64,` prefix — just the base64 string). Present when the Tasshack map manager decoded and rendered successfully.
+- **`image`** — Optional: base64 **image** bytes (no `data:…;base64,` prefix) from `DreameVacuumMapRenderer` (usually PNG; renderer may return other raster formats in edge cases). Present when decode + render succeed.
 - **`map_data`** — Optional small object when decode succeeded: e.g. `rooms` (count), `robot_position` / `charger_position` as `{ "x", "y" }`.
 - **`raw_bytes`** — Integer: length of the decoded raw file (same as `len(base64.b64decode(raw_b64))` when valid).
 - **`render_error`** — Optional string if decode/render failed; **`raw_b64` is still present** so pipelines can fall back to raw-only.

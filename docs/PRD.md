@@ -80,14 +80,14 @@ dreame-mcp server (FastMCP 3.1)
          ▼
     DreameHomeClient (client.py)
          ├── login()          ← DreameHome cloud auth (JWT)
-         ├── get_status()     ← get_properties MiIO call over cloud
-         ├── control(cmd)     ← action MiIO call over cloud
-         └── get_map()        ← get_device_file() + Tasshack map decode
-              │
+         ├── get_status()     ← cloud properties
+         ├── control(cmd)     ← actions over cloud
+         └── get_map()        ← signed-URL get_file first; get_device_file fallback; decode+render
+              │                   via DreameVacuumMapDecoder + DreameVacuumMapRenderer
               ▼
          tasshack_dreame_vacuum_ref/
               ├── protocol.py  ← DreameVacuumDreameHomeCloudProtocol
-              └── map.py       ← DreameVacuumMapManager (decode + render)
+              └── map.py       ← DreameMapVacuumMapManager + DreameVacuumMapDecoder + DreameVacuumMapRenderer
 
 React webapp (Vite, port 10895)
     └── proxies /api/* → http://localhost:10894
@@ -105,12 +105,12 @@ Stable integration surface for **robotics-mcp**, **yahboom-mcp**, and other cons
 | Success shape | `success: true` plus inline base64 fields (see below) |
 | Failure shape | HTTP **502**, body `{"detail": "<message>"}` (FastAPI) — not the success object |
 | `raw_b64` | **Always on success** — base64 of raw Dreame cloud map file bytes (primary artifact for custom decoders / fleet pipelines) |
-| `image` | Optional — base64 **PNG** (no `data:` prefix) when Tasshack decode + render succeeds |
+| `image` | Optional — base64 **image** (no `data:` prefix) when Tasshack decode + `DreameVacuumMapRenderer.render_map` succeed |
 | `map_data` | Optional — `{ rooms, robot_position, charger_position }` when decode succeeds |
 | `raw_bytes` | Integer — length of raw file |
-| `render_error` | Optional — present if PNG path failed; `raw_b64` still returned |
+| `render_error` | Optional — present if decode/render failed; `raw_b64` still returned on successful download |
 
-**miIO not required** for map: cloud `OBJECT_NAME` + file fetch + optional Tasshack decode. Full detail: `docs/MAP_AND_ROBOTICS.md`.
+**miIO not required** for map: see `docs/MAP_AND_ROBOTICS.md` (signed-URL download first, then optional Tasshack decode/render).
 
 ---
 
@@ -158,7 +158,7 @@ For reference — common questions:
 | go_home reliability | Medium | Verify on firmware; PRD action table uses Tasshack (3,1) for CHARGE |
 | py-mini-racer Windows install | Low | Optional dep — map works without it (raw_b64) |
 | MQTT occasionally fails to connect | Low | Non-fatal, polling works |
-| Map decode untested against r2566a | Medium | Need live test |
+| Map decode untested against r2566a | Low | r2566a: signed-URL + decoder/renderer path confirmed in the field (2026) |
 | Auth key not persisted across restarts | Low | Re-auths on every start |
 
 ---
