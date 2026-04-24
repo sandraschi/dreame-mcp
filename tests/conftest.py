@@ -11,6 +11,7 @@ Usage:
     uv run pytest -k "test_map"            # just map tests
     uv run pytest --live                   # CLI flag for live mode
 """
+
 from __future__ import annotations
 
 import base64
@@ -25,6 +26,7 @@ from dreame_mcp.state import _state
 # ---------------------------------------------------------------------------
 # CLI option: --live flag
 # ---------------------------------------------------------------------------
+
 
 def pytest_addoption(parser):
     parser.addoption("--live", action="store_true", default=False, help="Run tests against live hoover")
@@ -57,16 +59,106 @@ _TINY_PNG = (
 
 # Synthetic occupancy grid (10x10, 0=free, 100=occupied, -1=unknown)
 _MOCK_OCCUPANCY_GRID = [
-    100, 100, 100, 100, 100, 100, 100, 100, 100, 100,
-    100,   0,   0,   0,   0,   0,   0,   0,   0, 100,
-    100,   0,   0,   0,   0,   0,   0,   0,   0, 100,
-    100,   0,   0, 100, 100,   0,   0,   0,   0, 100,
-    100,   0,   0, 100, 100,   0,   0,   0,   0, 100,
-    100,   0,   0,   0,   0,   0,   0,   0,   0, 100,
-    100,   0,   0,   0,   0,   0, 100, 100,   0, 100,
-    100,   0,   0,   0,   0,   0, 100, 100,   0, 100,
-    100,   0,   0,   0,   0,   0,   0,   0,   0, 100,
-    100, 100, 100, 100, 100, 100, 100, 100, 100, 100,
+    100,
+    100,
+    100,
+    100,
+    100,
+    100,
+    100,
+    100,
+    100,
+    100,
+    100,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    100,
+    100,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    100,
+    100,
+    0,
+    0,
+    100,
+    100,
+    0,
+    0,
+    0,
+    0,
+    100,
+    100,
+    0,
+    0,
+    100,
+    100,
+    0,
+    0,
+    0,
+    0,
+    100,
+    100,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    100,
+    100,
+    0,
+    0,
+    0,
+    0,
+    0,
+    100,
+    100,
+    0,
+    100,
+    100,
+    0,
+    0,
+    0,
+    0,
+    0,
+    100,
+    100,
+    0,
+    100,
+    100,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    100,
+    100,
+    100,
+    100,
+    100,
+    100,
+    100,
+    100,
+    100,
+    100,
+    100,
 ]
 
 
@@ -154,6 +246,7 @@ def occupancy_grid():
 # Fixtures: mocked client
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def mock_client(mock_status, mock_map_response):
     """Fully mocked DreameHomeClient — no cloud calls."""
@@ -185,10 +278,12 @@ def patched_state(mock_client):
 # Fixtures: live client (IRL only)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def live_client():
     """Real DreameHomeClient from env vars. Only used with @pytest.mark.live."""
     from dreame_mcp.client import client_from_env
+
     client = client_from_env()
     if client is None:
         pytest.skip("No DREAME_USER/DREAME_PASSWORD set")

@@ -32,16 +32,16 @@ default:
 
 # ── Quality ───────────────────────────────────────────────────────────────────
 
-# Execute Ruff SOTA v13.1 linting
+# Execute Ruff (Python) and Biome (Webapp) SOTA v14.1 linting
 lint:
-    Set-Location '{{justfile_directory()}}'
     uv run ruff check .
+    cd webapp; npm run lint
 
-# Execute Ruff SOTA v13.1 fix and formatting
+# Execute Ruff and Biome SOTA v14.1 fix and formatting
 fix:
-    Set-Location '{{justfile_directory()}}'
     uv run ruff check . --fix --unsafe-fixes
     uv run ruff format .
+    cd webapp; npm run fix
 
 # ── Hardening ─────────────────────────────────────────────────────────────────
 
@@ -54,3 +54,17 @@ check-sec:
 audit-deps:
     Set-Location '{{justfile_directory()}}'
     uv run safety check
+
+# ── Operations ────────────────────────────────────────────────────────────────
+
+# Extract DID and miIO Tokens from DreameHome Cloud
+extract-tokens:
+    uv run python scripts/extract_tokens.py
+
+# Launch the hybrid MCP bridge (Local + Cloud)
+start-hybrid:
+    uv run python -m dreame_mcp --mode dual --port 10794
+
+# Perform a raw UDP discovery probe to check vacuum responsiveness
+check-discovery:
+    uv run python -m miio discover

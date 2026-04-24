@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Dreame D20 Pro Plus MCP Server — FastMCP 3.1, DreameHome cloud, sampling, agentic workflow."""
+
 from __future__ import annotations
 
 import logging
@@ -11,11 +12,17 @@ from datetime import datetime
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastmcp import FastMCP
 
 from .agentic import dreame_agentic_workflow
 from .client import client_from_env
-from .portmanteau import dreame_tool
+from .portmanteau import (
+    dreame_tool,
+    execute_control_data,
+    fetch_map_data,
+    fetch_status_data,
+)
 from .state import _state
 
 logging.basicConfig(
@@ -34,15 +41,15 @@ async def lifespan(app: FastAPI):
         ok = await client.connect()
         if ok:
             _state["client"] = client
-            logger.info("DreameHome client connected (DID=%s)", client._did)
-            # Persist auth_key so it can be reused across restarts
+            mode = "Hybrid" if (client._ip and client._username) else ("Local" if client._ip else "Cloud")
+            logger.info("Dreame Protocol client connected [%s] (DID=%s)", mode, client._did)
             if client.auth_key:
-                logger.info("Auth key refreshed — set DREAME_AUTH_KEY=%s", client.auth_key[:30] + "…")
+                logger.info("Auth key available — set DREAME_AUTH_KEY=%s", client.auth_key[:30] + "…")
         else:
-            logger.warning("DreameHome connect failed — running in stub mode")
+            logger.warning("Dreame Protocol connect failed — running in stub mode")
             _state["client"] = None
     else:
-        logger.info("No credentials — running in stub mode (set DREAME_USER + DREAME_PASSWORD)")
+        logger.info("No credentials (DREAME_IP/TOKEN or USER/PWD) — running in stub mode")
         _state["client"] = None
 
     yield
@@ -61,6 +68,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    """Catch-all for all crashes to prevent 502 Bad Gateway."""
+    logger.exception("Global crash caught for %s %s", request.method, request.url)
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "error": "Internal Server Error", "detail": str(exc), "service": "dreame-mcp"},
+    )
+
+
 mcp = FastMCP.from_fastapi(app, name="Dreame D20 Pro Plus")
 
 # ---------------------------------------------------------------------------
@@ -68,11 +86,11 @@ mcp = FastMCP.from_fastapi(app, name="Dreame D20 Pro Plus")
 # ---------------------------------------------------------------------------
 
 _HELP_CATEGORIES = {
-    "status":     "Robot status (battery, state, area). dreame(operation='status').",
-    "map":        "LIDAR map image + room data. dreame(operation='map'). Returns base64 PNG when map rendering is available.",
-    "control":    "start_clean, stop, pause, go_home, find_robot. Requires DREAME_USER + DREAME_PASSWORD.",
-    "connection": "Set DREAME_USER, DREAME_PASSWORD, DREAME_COUNTRY (eu), DREAME_DID (optional).",
-    "agentic":    "dreame_agentic_workflow(goal=...) — LLM plans and executes multi-step goals via sampling.",
+    "status": "Robot status (battery, state, area). dreame(operation='status').",
+    "map": "LIDAR map image + room data. dreame(operation='map').",
+    "control": "start_clean, stop, pause, go_home, find_robot. Supports Local (IP/Token) or Cloud.",
+    "connection": "Set DREAME_IP/TOKEN (Local) or DREAME_USER/PASSWORD (Cloud).",
+    "agentic": "dreame_agentic_workflow(goal=...) — LLM plans and executes multi-step goals via sampling.",
 }
 
 
@@ -80,9 +98,13 @@ async def dreame_help(category: str | None = None, topic: str | None = None) -> 
     """Multi-level help for Dreame D20 Pro Plus MCP."""
     if not category:
         client = _state.get("client")
+        mode = "stub"
+        if client:
+            mode = "hybrid" if (client._ip and client._username) else ("local" if client._ip else "cloud")
         return {
-            "help": "Dreame D20 Pro Plus MCP (DreameHome cloud)",
+            "help": "Dreame D20 Pro Plus MCP (Local/Cloud Hybrid)",
             "connected": client is not None and client.connected,
+            "mode": mode,
             "did": client._did if client else None,
             "categories": _HELP_CATEGORIES,
         }
@@ -108,11 +130,15 @@ def dreame_quick_start() -> str:
 This server uses the DreameHome cloud API — no local token required.
 
 1. Set environment variables:
+   # Local (Fastest, Circumvention)
+   DREAME_IP=192.168.0.178
+   DREAME_TOKEN=your_token
+
+   # Cloud (Maps/Global)
    DREAME_USER=your@email.com
    DREAME_PASSWORD=yourpassword
-   DREAME_COUNTRY=eu          (or cn, us, etc.)
-   DREAME_DID=2045852486      (optional — auto-discovered if single device)
-   DREAME_AUTH_KEY=...        (optional — reuse token from previous login)
+   DREAME_COUNTRY=eu
+
    DREAME_REF_PATH=D:/Dev/repos/tasshack_dreame_vacuum_ref
 
 2. Start server: uv run python -m dreame_mcp --mode dual --port 10794
@@ -129,44 +155,82 @@ def dreame_diagnostics() -> str:
 1. GET /api/v1/health — check connected: true, DID present
 2. dreame(operation='status') — battery and state
 3. dreame(operation='start_clean') — confirmed working
-4. dreame(operation='go_home') — NOTE: currently not working (action ID unverified)
-   Workaround: dock via DreameHome app manually
-5. dreame(operation='map') — requires MQTT connection; raw_b64 always returned
-6. dreame_help(category='connection') — env var reference
-7. Dashboard: http://localhost:10895"""
+4. dreame(operation='go_home') — Return to dock
+5. dreame(operation='map') — LIDAR map retrieval
+6. dreame_help(category='connection') — ENV reference
+7. Dashboard: http://localhost:10795"""
 
 
 # ---------------------------------------------------------------------------
 # REST API
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/v1/health")
 async def health():
     client = _state.get("client")
+    mode = "stub"
+    if client:
+        mode = "hybrid" if (client._ip and client._username) else ("local" if client._ip else "cloud")
     return {
         "status": "ok",
         "service": "dreame-mcp",
         "connected": client is not None and client.connected,
+        "local_miot": client.local_miot_ready() if client else False,
+        "mode": mode,
         "did": client._did if client else None,
-        "cloud": "DreameHome",
         "timestamp": datetime.now().isoformat(),
+    }
+
+
+@app.get("/api/capabilities")
+async def capabilities():
+    """Industrial capability discovery for fleet managers."""
+    return {
+        "mcp_version": "3.2.0",
+        "capabilities": {
+            "tools": ["dreame", "dreame_help", "dreame_agentic_workflow"],
+            "prompts": ["dreame_quick_start", "dreame_diagnostics"],
+            "resources": [],
+            "features": {
+                "sampling": True,
+                "agentic_workflow": True,
+                "lidar_mapping": True,
+            },
+        },
+        "endpoints": {
+            "health": "/api/v1/health",
+            "status": "/api/v1/status",
+            "map": "/api/v1/map",
+            "map_png": "/api/v1/map/png",
+        },
     }
 
 
 @app.get("/api/v1/status")
 async def api_status():
-    out = await dreame_tool(ctx=None, operation="status")
-    if not out.get("success"):
-        raise HTTPException(status_code=502, detail=out.get("error", "Status unavailable"))
-    return out
+    try:
+        client = _state.get("client")
+        out = await fetch_status_data(client)
+        if not out.get("success"):
+            return JSONResponse(status_code=502, content=out)
+        return out
+    except Exception as e:
+        logger.exception("Route status failed")
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
 
 @app.get("/api/v1/map")
 async def api_map():
-    out = await dreame_tool(ctx=None, operation="map")
-    if not out.get("success"):
-        raise HTTPException(status_code=502, detail=out.get("error", "Map unavailable"))
-    return out
+    try:
+        client = _state.get("client")
+        out = await fetch_map_data(client)
+        if not out.get("success"):
+            return JSONResponse(status_code=502, content=out)
+        return out
+    except Exception as e:
+        logger.exception("Route map failed")
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
 
 @app.get("/api/v1/map/png")
@@ -180,15 +244,20 @@ async def api_map_png():
 
     from .map_export import map_response_to_png_bytes
 
-    out = await dreame_tool(ctx=None, operation="map")
+    client = _state.get("client")
+    out = await fetch_map_data(client)
     if not out.get("success"):
         raise HTTPException(status_code=502, detail=out.get("error", "Map unavailable"))
     png = map_response_to_png_bytes(out)
     if png is None:
         raise HTTPException(status_code=404, detail="No rendered PNG available (render_error or deps missing)")
-    return Response(content=png, media_type="image/png", headers={
-        "Content-Disposition": "inline; filename=dreame_map.png",
-    })
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={
+            "Content-Disposition": "inline; filename=dreame_map.png",
+        },
+    )
 
 
 @app.get("/api/v1/map/pgm")
@@ -205,7 +274,8 @@ async def api_map_pgm():
 
     from .map_export import occupancy_to_pgm
 
-    out = await dreame_tool(ctx=None, operation="map")
+    client = _state.get("client")
+    out = await fetch_map_data(client)
     if not out.get("success"):
         raise HTTPException(status_code=502, detail=out.get("error", "Map unavailable"))
 
@@ -226,17 +296,21 @@ async def api_map_pgm():
             occupancy = []
             for p in pixels:
                 if p > 250:
-                    occupancy.append(0)       # free
+                    occupancy.append(0)  # free
                 elif p < 10:
-                    occupancy.append(100)     # occupied
+                    occupancy.append(100)  # occupied
                 else:
-                    occupancy.append(-1)      # unknown
+                    occupancy.append(-1)  # unknown
             pgm = occupancy_to_pgm(occupancy, w, h)
-            return Response(content=pgm, media_type="application/octet-stream", headers={
-                "Content-Disposition": "attachment; filename=dreame_map.pgm",
-            })
-        except Exception:
-            pass
+            return Response(
+                content=pgm,
+                media_type="application/octet-stream",
+                headers={
+                    "Content-Disposition": "attachment; filename=dreame_map.pgm",
+                },
+            )
+        except Exception as e:
+            logger.debug("PGM export path failed: %s", e)
 
     raise HTTPException(status_code=404, detail="Cannot export PGM: map rendering unavailable")
 
@@ -257,9 +331,13 @@ async def api_map_yaml():
         resolution=0.05,
         origin=(0.0, 0.0, 0.0),
     )
-    return Response(content=yaml_str, media_type="text/yaml", headers={
-        "Content-Disposition": "attachment; filename=dreame_map.yaml",
-    })
+    return Response(
+        content=yaml_str,
+        media_type="text/yaml",
+        headers={
+            "Content-Disposition": "attachment; filename=dreame_map.yaml",
+        },
+    )
 
 
 @app.post("/api/v1/control/{cmd}")
@@ -267,7 +345,8 @@ async def api_control(cmd: str):
     valid = ("start_clean", "stop", "pause", "go_home", "find_robot")
     if cmd not in valid:
         raise HTTPException(status_code=400, detail=f"Unknown command: {cmd}. Valid: {valid}")
-    out = await dreame_tool(ctx=None, operation=cmd)
+    client = _state.get("client")
+    out = await execute_control_data(client, cmd)
     if not out.get("success"):
         raise HTTPException(status_code=502, detail=out.get("error", "Control failed"))
     return out
@@ -277,19 +356,22 @@ async def api_control(cmd: str):
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def main():
     import argparse
+
     p = argparse.ArgumentParser(description="Dreame D20 Pro Plus MCP Server")
     p.add_argument("--mode", default="dual", choices=("stdio", "http", "dual"))
-    p.add_argument("--port", type=int, default=int(os.environ.get("DREAME_MCP_PORT", "10894")))
+    p.add_argument("--port", type=int, default=int(os.environ.get("DREAME_MCP_PORT", "10794")))
     args = p.parse_args()
 
     if args.mode == "stdio":
         from fastmcp.cli import run_stdio
+
         run_stdio(mcp)
         return
 
-    uvicorn.run(app, host="0.0.0.0", port=args.port)
+    uvicorn.run(app, host="0.0.0.0", port=args.port)  # noqa: S104
 
 
 if __name__ == "__main__":

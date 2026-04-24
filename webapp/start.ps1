@@ -1,9 +1,19 @@
-﻿# Dreame D20 Pro Plus MCP - backend + webapp startup
-# Ports: 10894 backend (MCP SSE + REST), 10895 frontend (Vite)
+﻿Param([switch]$Headless)
+
+# --- SOTA Headless Standard ---
+if ($Headless -and ($Host.UI.RawUI.WindowTitle -notmatch 'Hidden')) {
+    Start-Process pwsh -ArgumentList '-NoProfile', '-File', $PSCommandPath, '-Headless' -WindowStyle Hidden
+    exit
+}
+$WindowStyle = if ($Headless) { 'Hidden' } else { 'Normal' }
+# ------------------------------
+
+# Dreame D20 Pro Plus MCP - backend + webapp startup
+# Ports: 10794 backend (MCP SSE + REST), 10895 frontend (Vite)
 # Requires: Windows PowerShell 5.1+, uv, Node/npm
 
-$APP_PORT    = 10894
-$WEBAPP_PORT = 10895
+$APP_PORT    = 10794
+$WEBAPP_PORT = 10795
 $WEBAPP_DIR  = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 $ROOT_DIR    = Split-Path -Parent $WEBAPP_DIR
 $TEMP_DIR    = "D:\Dev\repos\temp"
@@ -18,6 +28,39 @@ function Stop-Tracked {
 try {
     Write-Host "[DREAME-MCP] Webapp : $WEBAPP_DIR" -ForegroundColor DarkGray
     Write-Host "[DREAME-MCP] Root   : $ROOT_DIR"   -ForegroundColor DarkGray
+
+    # --- Robust .env Loading ---
+    $envPath = $null
+    $potentialPaths = @(
+        (Join-Path $WEBAPP_DIR ".env"),             # Local to script
+        (Join-Path $ROOT_DIR ".env"),               # Root of repo
+        (Join-Path (Get-Location) ".env")           # Current Working Directory
+    )
+
+    foreach ($p in $potentialPaths) {
+        if (Test-Path $p) {
+            $envPath = (Resolve-Path $p).Path
+            break
+        }
+    }
+
+    if ($envPath) {
+        Write-Host "[DREAME-MCP] Loading .env from: $envPath" -ForegroundColor Gray
+        foreach ($line in Get-Content $envPath) {
+            $line = $line.Trim()
+            if ($line -and -not $line.StartsWith("#") -and $line -match "^([^=]+)=(.*)$") {
+                $name = $matches[1].Trim()
+                $val  = $matches[2].Trim()
+                # Remove quotes if present
+                $val = $val -replace "^['""]|['""]$", ""
+                if ($val) {
+                    Set-Item -Path "Env:$name" -Value $val
+                }
+            }
+        }
+    } else {
+        Write-Host "[DREAME-MCP] No .env found in potential paths." -ForegroundColor DarkGray
+    }
 
     # Refresh PATH - critical when launched from .bat without full shell env
     $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
@@ -102,10 +145,10 @@ try {
     }
 
     # Credentials - only set if not already in environment
-    if (-not $env:DREAME_USER)     { $env:DREAME_USER     = "sandraschipal@hotmail.com" }
-    if (-not $env:DREAME_PASSWORD) { $env:DREAME_PASSWORD = "Sec1000dh#" }
+    if (-not $env:DREAME_USER)     { Write-Host "[WARNING] DREAME_USER not set." -ForegroundColor Yellow }
+    if (-not $env:DREAME_PASSWORD) { Write-Host "[WARNING] DREAME_PASSWORD not set." -ForegroundColor Yellow }
     if (-not $env:DREAME_COUNTRY)  { $env:DREAME_COUNTRY  = "eu" }
-    if (-not $env:DREAME_DID)      { $env:DREAME_DID      = "2045852486" }
+    if (-not $env:DREAME_DID)      { Write-Host "[INFO] DREAME_DID not set - using auto-discovery." -ForegroundColor Cyan }
 
     # --- Backend (async) ---
     Write-Host "[DREAME-MCP] Starting backend on $APP_PORT..." -ForegroundColor Green
@@ -153,5 +196,6 @@ Start-Process powershell -ArgumentList "-NoProfile", "-WindowStyle", "Hidden", "
     Stop-Tracked
     Write-Host "[DONE] Dreame MCP stopped." -ForegroundColor Green
 }
+
 
 

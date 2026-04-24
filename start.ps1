@@ -1,23 +1,15 @@
-# Dreame D20 Pro Plus MCP - backend only
-# Use webapp\start.bat to start backend + frontend together.
-# Ports: 10894 backend, 10895 frontend
+Param([switch]$Headless)
 
-$PORT = 10894
-
-Write-Host "--- Dreame-MCP Backend ---" -ForegroundColor Cyan
-
-$zombie = Get-NetTCPConnection -LocalPort $PORT -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($zombie) {
-    Write-Host "Clearing port $PORT (PID $($zombie.OwningProcess))..." -ForegroundColor Yellow
-    Stop-Process -Id $zombie.OwningProcess -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Milliseconds 400
+# --- SOTA Headless Standard ---
+if ($Headless -and ($Host.UI.RawUI.WindowTitle -notmatch 'Hidden')) {
+    Start-Process pwsh -ArgumentList '-NoProfile', '-File', $PSCommandPath, '-Headless' -WindowStyle Hidden
+    exit
 }
+$WindowStyle = if ($Headless) { 'Hidden' } else { 'Normal' }
+# ------------------------------
 
-# $env:DREAME_USER     = "your@email.com"
-# $env:DREAME_PASSWORD = "yourpassword"
-# $env:DREAME_COUNTRY  = "eu"
-# $env:DREAME_DID      = "2045852486"
+$env:FASTMCP_LOG_LEVEL = 'WARNING'
+# dreame-mcp Start - Standards-Compliant SOTA
+Write-Host 'Starting dreame-mcp...' -ForegroundColor Cyan
 
-Write-Host "Starting backend on port $PORT..." -ForegroundColor Green
-Set-Location $PSScriptRoot
-uv run python -m dreame_mcp --mode dual --port $PORT
+uv run -m dreame_mcp

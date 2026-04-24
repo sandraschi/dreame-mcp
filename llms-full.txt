@@ -1,0 +1,32 @@
+# Dreame MCP Server - Comprehensive Documentation
+
+## Overview
+Dreame MCP is an industrialized FastMCP 3.2.0 server designed for the Dreame D20 Pro Plus (and similar models using the DreameHome cloud). It eliminates the need for local MiIO tokens by utilizing the Tasshack Dreame protocol directly against the cloud.
+
+## Technical Archictecture
+- **Core Protocol**: `custom_components.dreame_vacuum.dreame` (Tasshack Ref).
+- **LIDAR Map Renderer**: PIL + Numpy + MiniRacer (JS-based PGM decoder).
+- **Unified Tool Pattern**: `dreame(operation=...)` consolidates all robot interactions.
+- **REST API**: FastAPI backend providing direct PNG/PGM/YAML exports for SLAM/ROS2.
+
+## Deployment Guidelines
+### Environment Setup
+1. Clone `https://github.com/Tasshack/dreame-vacuum` to a local path (e.g., `D:/Dev/repos/tasshack_dreame_vacuum_ref`).
+2. Point `DREAME_REF_PATH` to this directory.
+3. Configure `DREAME_USER` and `DREAME_PASSWORD`.
+
+### Execution
+Run via the modernized `start.ps1` script to ensure port squatter clearance and dual-mode execution (stdio/HTTP).
+
+## Capabilities Matrix
+| Feature | Status | SIID/PIID |
+|---------|--------|-----------|
+| State/Battery | DONE | 2.1 / 3.1 |
+| LIDAR Fetch | DONE | Cloud Object / 23.1 |
+| Map Render | DONE | Tasshack Ref |
+| Agentic Sampling | DONE | FastMCP ctx.sample |
+
+## Networking Standards
+- **Backend Port**: 10794 (FastAPI + MCP HTTP)
+- **Frontend Port**: 10795 (Vite Dashboard)
+- **CORS**: Industrial permissive for fleet-wide telemetry access.

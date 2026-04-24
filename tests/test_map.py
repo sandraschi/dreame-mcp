@@ -1,11 +1,12 @@
 """Tests for LIDAR map download — the critical path.
 
 Covers:
-    - Mocked: map fetch success (with/without image), timeout, not-connected
+    - Mocked: `dreame_tool` returns Markdown; `fetch_map_data` / `fetch_status_data` return dicts
     - Mocked: map export to PGM/YAML (ROS2 OccupancyGrid standard)
     - Mocked: map export to PNG (direct download)
     - Live: real map fetch from DreameHome cloud (IRL only)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +16,12 @@ import io
 import pytest
 
 from dreame_mcp.client import MAP_FETCH_TIMEOUT, DreameHomeClient
-from dreame_mcp.portmanteau import dreame_tool
+from dreame_mcp.portmanteau import (
+    dreame_tool,
+    execute_control_data,
+    fetch_map_data,
+    fetch_status_data,
+)
 from dreame_mcp.state import _state
 
 # ======================================================================
@@ -24,64 +30,84 @@ from dreame_mcp.state import _state
 
 
 class TestMapFetchMocked:
-    """Map download via portmanteau tool with mocked client."""
+    """`dreame_tool` returns Markdown (LLM-facing). Structured payloads: `fetch_map_data` etc."""
 
     @pytest.mark.asyncio
     async def test_map_success_with_image(self, patched_state, mock_map_response):
-        """Map fetch returns base64 PNG + raw_b64 + map_data."""
+        """Markdown summary reflects successful map + rooms (underlying dict has full fields)."""
+        data = await fetch_map_data(patched_state)
+        assert data["success"] is True
+        assert data["map_data"]["rooms"] == 3
+
         result = await dreame_tool(ctx=None, operation="map")
-        assert result["success"] is True
-        assert "image" in result           # rendered PNG
-        assert "raw_b64" in result         # raw fallback
-        assert "map_data" in result
-        assert result["map_data"]["rooms"] == 3
-        assert result["raw_bytes"] > 0
+        assert isinstance(result, str)
+        assert "## LIDAR Map Summary" in result
+        assert "Rooms" in result
+        assert "[MAP ERROR]" not in result
+        # Optional note when PNG present
+        assert "Image data received" in result or "raw" in result.lower()
 
     @pytest.mark.asyncio
     async def test_map_success_without_image(self, patched_state, mock_map_response_no_image):
-        """Map fetch without rendering — raw_b64 still returned."""
+        """Map without render still reports summary; warning carries render_error text."""
         patched_state.get_map.return_value = mock_map_response_no_image
+        data = await fetch_map_data(patched_state)
+        assert data["success"] is True
+        assert "render_error" in data
+
         result = await dreame_tool(ctx=None, operation="map")
-        assert result["success"] is True
-        assert "image" not in result
-        assert "raw_b64" in result
-        assert "render_error" in result
+        assert isinstance(result, str)
+        assert "## LIDAR Map Summary" in result
+        assert "py_mini_racer" in result or "Render error" in result or "WARNING" in result
 
     @pytest.mark.asyncio
     async def test_map_not_connected(self):
-        """Map fetch with no client returns stub."""
+        """No client: fetch_map_data fails; dreame_tool surfaces [MAP ERROR] markdown."""
         original = _state.get("client")
         _state["client"] = None
         try:
+            data = await fetch_map_data(None)
+            assert data.get("success") is False
             result = await dreame_tool(ctx=None, operation="map")
-            assert result["success"] is True
-            assert "message" in result  # stub message
+            assert isinstance(result, str)
+            assert "[MAP ERROR]" in result
+            assert "Disconnected" in result or "DREAME" in result
         finally:
             _state["client"] = original
 
     @pytest.mark.asyncio
     async def test_map_timeout(self, patched_state, mock_map_timeout_response):
-        """Map fetch timeout returns descriptive error."""
+        """Timeout error appears in markdown body (not a JSON dict)."""
         patched_state.get_map.return_value = mock_map_timeout_response
+        data = await fetch_map_data(patched_state)
+        assert data["success"] is False
+        assert "timed out" in data.get("error", "").lower()
+
         result = await dreame_tool(ctx=None, operation="map")
-        assert result["success"] is False
-        assert "timed out" in result.get("error", "").lower()
+        assert isinstance(result, str)
+        assert "[MAP ERROR]" in result
+        assert "timed out" in result.lower()
 
     @pytest.mark.asyncio
     async def test_map_cloud_failure(self, patched_state):
-        """Map fetch cloud failure returns diagnostic info."""
-        patched_state.get_map.return_value = {
+        """User-facing text includes the error string; full diagnostic stays in dict only."""
+        fail = {
             "success": False,
             "error": "Map fetch failed (cloud returned no file data)",
             "diagnostic_info": {
                 "did": "2045852486",
                 "object_name": "dreame.vacuum.r2566a/12345/2045852486/0",
-                "attempted": [{"filename": "test", "type": "map"}],
             },
         }
+        patched_state.get_map.return_value = fail
+        data = await fetch_map_data(patched_state)
+        assert data["success"] is False
+        assert "diagnostic_info" in data
+
         result = await dreame_tool(ctx=None, operation="map")
-        assert result["success"] is False
-        assert "diagnostic_info" in result
+        assert isinstance(result, str)
+        assert "cloud returned no file data" in result
+        assert "diagnostic_info" not in result
 
 
 class TestMapExportFormats:
@@ -135,42 +161,57 @@ class TestMapExportFormats:
 
 
 class TestStatusMocked:
-    """Status operations with mocked client."""
+    """Status: `fetch_status_data` dict vs `dreame_tool` Markdown."""
 
     @pytest.mark.asyncio
     async def test_status_success(self, patched_state):
+        data = await fetch_status_data(patched_state)
+        assert data["success"] is True
+        assert data["battery"] == 72
+        assert data["state"] == "charging"
+
         result = await dreame_tool(ctx=None, operation="status")
-        assert result["success"] is True
-        assert result["battery"] == 72
-        assert result["state"] == "charging"
+        assert isinstance(result, str)
+        assert "## Dreame Robot Status" in result
+        assert "72" in result
+        assert "Charging" in result
 
     @pytest.mark.asyncio
     async def test_battery_shortcut(self, patched_state):
         result = await dreame_tool(ctx=None, operation="battery")
-        assert result["success"] is True
-        assert result["battery"] == 72
+        assert isinstance(result, str)
+        assert "Battery" in result
+        assert "72" in result
 
     @pytest.mark.asyncio
     async def test_unknown_operation(self, patched_state):
         result = await dreame_tool(ctx=None, operation="dance")
-        assert result["success"] is False
-        assert "Unknown operation" in result["error"]
+        assert isinstance(result, str)
+        assert "Unknown operation" in result
+        assert "dance" in result
 
 
 class TestControlMocked:
-    """Control commands with mocked client."""
+    """Control: verify mock calls + Markdown success line."""
 
     @pytest.mark.asyncio
     async def test_start_clean(self, patched_state):
+        data = await execute_control_data(patched_state, "start_clean")
+        assert data["success"] is True
+        patched_state.control.reset_mock()
+
         result = await dreame_tool(ctx=None, operation="start_clean")
-        assert result["success"] is True
+        assert isinstance(result, str)
+        assert "start_clean" in result
+        assert "Command" in result or "Executed" in result
         patched_state.control.assert_called_once_with("start_clean")
 
     @pytest.mark.asyncio
     async def test_find_robot(self, patched_state):
         """The 'I am here' chirp command."""
         result = await dreame_tool(ctx=None, operation="find_robot")
-        assert result["success"] is True
+        assert isinstance(result, str)
+        assert "find_robot" in result
         patched_state.control.assert_called_once_with("find_robot")
 
 
@@ -252,7 +293,7 @@ def _occupancy_to_pgm(data: list[int], width: int, height: int) -> bytes:
     buf.write(f"P5\n{width} {height}\n255\n".encode())
     for val in data:
         if val == -1:
-            buf.write(bytes([205]))   # unknown → mid-gray
+            buf.write(bytes([205]))  # unknown → mid-gray
         elif val >= 0:
             pixel = int(254 * (1.0 - val / 100.0))
             buf.write(bytes([max(0, min(254, pixel))]))

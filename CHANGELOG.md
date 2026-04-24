@@ -6,12 +6,12 @@ All notable changes to dreame-mcp are documented here.
 
 ## [Unreleased]
 
-### Fixed — LIDAR map (download + image)
+### Fixed — LIDAR map (download + image) + local/hybrid (Tasshack)
 
-- **Signed-URL download first** (`get_interim_file_url` / `get_file`), matching Tasshack / Home Assistant; `get_device_file` is fallback only.
-- **Decode/render** — use `DreameVacuumMapDecoder` + `DreameVacuumMapRenderer` (the map manager class does not expose `decode_map` / `render_map` on the instance). Dashboard **Map** page shows the image when this path succeeds.
-- **Bootstrap** — Tasshack package stubs set `__path__` so `dreame.types` / `map` import; **`DreameHomeClient` always initializes** `self._map_renderer` in `__init__`.
-- **Locks / timeout** — serialized map fetches; `MAP_FETCH_TIMEOUT` 60s for the combined pipeline (see `tests/test_map.py`).
+- **Signed-URL first** on `protocol.cloud` or unified protocol (`get_interim_file_url` / `get_file` / `get_file_url`); `get_device_file` is fallback (limited attempts); then **siid=23, piid=1** (raw map property) and a final `get_file_url`+`get_file` pass. **`MAP_FETCH_TIMEOUT` 60s**; map fetches are **serialized** with a lock; **`DreameVacuumMapDecoder` + `DreameVacuumMapRenderer`**, with rich **`map_data`** (rooms, path, areas, dimensions).
+- **Bootstrap**: Tasshack package stubs set `__path__` so `dreame.types` / `map` import.
+- **Hybrid client**: `DreameVacuumProtocol` (local + cloud), `_safe_call` forwards file methods to `protocol.cloud` when needed; `control()` uses Tasshack **`action`**, cloud device pick uses **`DREAME_DID`** / **`DREAME_IP`**, **`disconnect()`** clears protocol and map state.
+- **Portmanteau / tests / lint**: as before; `dreame_tool` Markdown, `fetch_*` dicts; Ruff + Biome + pytest; ASCII markdown in tool strings where applicable.
 
 ### Fixed — LIDAR map download hang (critical)
 

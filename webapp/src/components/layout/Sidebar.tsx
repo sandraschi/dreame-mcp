@@ -1,22 +1,35 @@
-import React from 'react'
-import { NavLink } from 'react-router-dom'
-import { motion } from 'framer-motion'
+import { motion } from "framer-motion";
 import {
-  LayoutDashboard, Map, Activity, PlayCircle, Settings, HelpCircle,
-  Wrench, ChevronLeft, ChevronRight, Bot, ScanLine,
-} from 'lucide-react'
+  Activity,
+  Bot,
+  ChevronLeft,
+  ChevronRight,
+  HelpCircle,
+  LayoutDashboard,
+  PlayCircle,
+  ScanLine,
+  Settings,
+  Wrench,
+} from "lucide-react";
+import { NavLink } from "react-router-dom";
 
 const navItems = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/map', label: 'LIDAR Map', icon: ScanLine },
-  { path: '/status', label: 'Status', icon: Activity },
-  { path: '/controls', label: 'Controls', icon: PlayCircle },
-  { path: '/tools', label: 'MCP Tools', icon: Wrench },
-  { path: '/settings', label: 'Settings', icon: Settings },
-  { path: '/help', label: 'Help', icon: HelpCircle },
-]
+  { path: "/", label: "Dashboard", icon: LayoutDashboard },
+  { path: "/map", label: "LIDAR Map", icon: ScanLine },
+  { path: "/status", label: "Status", icon: Activity },
+  { path: "/controls", label: "Controls", icon: PlayCircle },
+  { path: "/tools", label: "MCP Tools", icon: Wrench },
+  { path: "/settings", label: "Settings", icon: Settings },
+  { path: "/help", label: "Help", icon: HelpCircle },
+];
 
-export default function Sidebar({ isCollapsed, onToggle }: { isCollapsed: boolean; onToggle: () => void }) {
+export default function Sidebar({
+  isCollapsed,
+  onToggle,
+}: {
+  isCollapsed: boolean;
+  onToggle: () => void;
+}) {
   return (
     <motion.aside
       initial={false}
@@ -29,9 +42,17 @@ export default function Sidebar({ isCollapsed, onToggle }: { isCollapsed: boolea
             <Bot className="text-white w-6 h-6" />
           </div>
           {!isCollapsed && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col">
-              <span className="text-lg font-bold tracking-tight text-white leading-tight">DREAME D20</span>
-              <span className="text-[10px] font-medium text-amber-400/80 uppercase tracking-widest">Mission Control</span>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex flex-col"
+            >
+              <span className="text-lg font-bold tracking-tight text-white leading-tight">
+                DREAME D20
+              </span>
+              <span className="text-[10px] font-medium text-amber-400/80 uppercase tracking-widest">
+                Mission Control
+              </span>
             </motion.div>
           )}
         </div>
@@ -43,12 +64,16 @@ export default function Sidebar({ isCollapsed, onToggle }: { isCollapsed: boolea
             to={item.path}
             className={({ isActive }) =>
               `flex items-center gap-4 px-3 py-3 rounded-xl transition-all duration-200 ${
-                isActive ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200 border border-transparent'
+                isActive
+                  ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                  : "text-slate-400 hover:bg-white/5 hover:text-slate-200 border border-transparent"
               }`
             }
           >
             <item.icon className="w-5 h-5 flex-shrink-0" />
-            {!isCollapsed && <span className="text-sm font-medium">{item.label}</span>}
+            {!isCollapsed && (
+              <span className="text-sm font-medium">{item.label}</span>
+            )}
           </NavLink>
         ))}
       </nav>
@@ -60,5 +85,5 @@ export default function Sidebar({ isCollapsed, onToggle }: { isCollapsed: boolea
         {isCollapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
       </button>
     </motion.aside>
-  )
+  );
 }

@@ -15,6 +15,7 @@ ROS2 OccupancyGrid standard:
 The Dreame vacuum's proprietary map blob is decoded by the Tasshack map layer.
 This module bridges the gap: Tasshack decoded data → standard ROS2/PGM/PNG exports.
 """
+
 from __future__ import annotations
 
 import base64
@@ -43,7 +44,7 @@ def occupancy_to_pgm(data: list[int], width: int, height: int) -> bytes:
     buf.write(f"P5\n{width} {height}\n255\n".encode())
     for val in data:
         if val == -1:
-            buf.write(bytes([205]))   # unknown → mid-gray
+            buf.write(bytes([205]))  # unknown → mid-gray
         elif val >= 0:
             pixel = int(254 * (1.0 - val / 100.0))
             buf.write(bytes([max(0, min(254, pixel))]))
@@ -97,8 +98,8 @@ def map_response_to_png_bytes(map_response: dict) -> bytes | None:
         data = base64.b64decode(img_b64)
         if data[:4] == b"\x89PNG":
             return data
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("map_response_to_png: decode failed: %s", e)
     return None
 
 
