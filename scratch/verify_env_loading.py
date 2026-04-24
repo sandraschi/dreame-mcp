@@ -9,7 +9,7 @@ sys.path.append(str(Path("D:/Dev/repos/dreame-mcp/src")))
 # Mock a .env file content
 env_path = Path("D:/Dev/repos/dreame-mcp/.env.test")
 env_path.write_text(
-    "DREAME_IP=192.168.0.100\n"
+    "DREAME_IP=192.168.0.178\n"
     "DREAME_TOKEN=1234567890abcdef1234567890abcdef\n"
 )
 
@@ -32,7 +32,7 @@ try:
 
     if client:
         print(f"SUCCESS: Client initialized with IP: {client._ip}")
-        if client._ip == "192.168.0.100":
+        if client._ip == "192.168.0.178":
             print("Verified: Correct IP loaded.")
         else:
             print(f"FAIL: Wrong IP loaded: {client._ip}")

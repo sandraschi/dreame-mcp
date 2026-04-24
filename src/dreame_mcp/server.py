@@ -12,7 +12,8 @@ from datetime import datetime
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastmcp import FastMCP, Context
+from fastapi.responses import JSONResponse
+from fastmcp import FastMCP
 
 from .agentic import dreame_agentic_workflow
 from .client import client_from_env
@@ -67,21 +68,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
     """Catch-all for all crashes to prevent 502 Bad Gateway."""
     logger.exception("Global crash caught for %s %s", request.method, request.url)
     return JSONResponse(
         status_code=500,
-        content={
-            "success": False, 
-            "error": "Internal Server Error", 
-            "detail": str(exc),
-            "service": "dreame-mcp"
-        }
+        content={"success": False, "error": "Internal Server Error", "detail": str(exc), "service": "dreame-mcp"},
     )
 
-from fastapi.responses import JSONResponse
 
 mcp = FastMCP.from_fastapi(app, name="Dreame D20 Pro Plus")
 
@@ -135,15 +131,15 @@ This server uses the DreameHome cloud API — no local token required.
 
 1. Set environment variables:
    # Local (Fastest, Circumvention)
-   DREAME_IP=192.168.1.100
+   DREAME_IP=192.168.0.178
    DREAME_TOKEN=your_token
-   
+
    # Cloud (Maps/Global)
    DREAME_USER=your@email.com
    DREAME_PASSWORD=yourpassword
    DREAME_COUNTRY=eu
-   
-   DREAME_REF_PATH=D:/Dev/repos/external/dreame-vacuum
+
+   DREAME_REF_PATH=D:/Dev/repos/tasshack_dreame_vacuum_ref
 
 2. Start server: uv run python -m dreame_mcp --mode dual --port 10794
 3. Open dashboard: http://localhost:10795
@@ -180,6 +176,7 @@ async def health():
         "status": "ok",
         "service": "dreame-mcp",
         "connected": client is not None and client.connected,
+        "local_miot": client.local_miot_ready() if client else False,
         "mode": mode,
         "did": client._did if client else None,
         "timestamp": datetime.now().isoformat(),
@@ -312,8 +309,8 @@ async def api_map_pgm():
                     "Content-Disposition": "attachment; filename=dreame_map.pgm",
                 },
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("PGM export path failed: %s", e)
 
     raise HTTPException(status_code=404, detail="Cannot export PGM: map rendering unavailable")
 
@@ -374,7 +371,7 @@ def main():
         run_stdio(mcp)
         return
 
-    uvicorn.run(app, host="0.0.0.0", port=args.port)
+    uvicorn.run(app, host="0.0.0.0", port=args.port)  # noqa: S104
 
 
 if __name__ == "__main__":

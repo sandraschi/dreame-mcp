@@ -34,6 +34,10 @@ When an MCP tool or REST API call is made, the backend performs "Intelligent Rou
 - **`DREAME_REF_PATH`**: A local clone of the core protocol library (`dreame-vacuum`) which contains the heavy lifting for decryption and map rendering.
 - **`python-dotenv`**: Used to load your `.env` secrets into the process environment.
 
+## MCP tool vs structured fetchers
+
+The FastMCP tool `dreame(operation=...)` returns **Markdown** (optimized for LLM context in the chat). The same logic used by REST is exposed as async functions in `dreame_mcp.portmanteau`: `fetch_status_data`, `fetch_map_data`, and `execute_control_data`, each returning a **JSON-serializable dict** (e.g. `success`, `battery`, `error`). Tests in `tests/test_map.py` cover both layers.
+
 ---
 
 > [!TIP]

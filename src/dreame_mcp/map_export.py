@@ -98,8 +98,8 @@ def map_response_to_png_bytes(map_response: dict) -> bytes | None:
         data = base64.b64decode(img_b64)
         if data[:4] == b"\x89PNG":
             return data
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("map_response_to_png: decode failed: %s", e)
     return None
 
 

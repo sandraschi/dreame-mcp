@@ -1,266 +1,302 @@
 import { AlertCircle, Clock, RefreshCw, ScanLine } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { api, type DreameMapResponse, type MapData, type Point } from "../lib/api";
+import {
+  api,
+  type DreameMapResponse,
+  type MapData,
+  type Point,
+} from "../lib/api";
 
-function mapToPixel(point: Point, dimensions: NonNullable<MapData["dimensions"]>): Point {
-	const x = (point.x - dimensions.left) / dimensions.grid_size;
-	const y =
-		(dimensions.height * dimensions.grid_size - 1 - (point.y - dimensions.top)) /
-		dimensions.grid_size;
-	return { x, y };
+function mapToPixel(
+  point: Point,
+  dimensions: NonNullable<MapData["dimensions"]>,
+): Point {
+  const x = (point.x - dimensions.left) / dimensions.grid_size;
+  const y =
+    (dimensions.height * dimensions.grid_size -
+      1 -
+      (point.y - dimensions.top)) /
+    dimensions.grid_size;
+  return { x, y };
 }
 
-
 export default function MapPage() {
-	const [mapData, setMapData] = useState<DreameMapResponse | null>(null);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
-	const [isTimeout, setIsTimeout] = useState(false);
-	const [showRaw, setShowRaw] = useState(false);
+  const [mapData, setMapData] = useState<DreameMapResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isTimeout, setIsTimeout] = useState(false);
+  const [showRaw, setShowRaw] = useState(false);
 
-	const fetchMap = useCallback(async () => {
-		setLoading(true);
-		setError(null);
-		setIsTimeout(false);
-		try {
-			const data = await api.getMap();
-			if (data.timeout) {
-				// Backend returned a timeout response (not an HTTP error)
-				setError((data.error as string) || "Map request timed out");
-				setIsTimeout(true);
-				setMapData(null);
-			} else {
-				setMapData(data);
-			}
-		} catch (e) {
-			const msg = e instanceof Error ? e.message : "Failed to load map";
-			setError(msg);
-			setIsTimeout(msg.toLowerCase().includes("timed out"));
-			setMapData(null);
-		} finally {
-			setLoading(false);
-		}
-	}, []);
+  const fetchMap = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setIsTimeout(false);
+    try {
+      const data = await api.getMap();
+      if (data.timeout) {
+        // Backend returned a timeout response (not an HTTP error)
+        setError((data.error as string) || "Map request timed out");
+        setIsTimeout(true);
+        setMapData(null);
+      } else {
+        setMapData(data);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to load map";
+      setError(msg);
+      setIsTimeout(msg.toLowerCase().includes("timed out"));
+      setMapData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-	useEffect(() => {
-		fetchMap();
-		// Auto-poll every 15 seconds for real-time feel without hitting cloud limits too hard
-		const interval = setInterval(fetchMap, 15000);
-		return () => clearInterval(interval);
-	}, [fetchMap]);
+  useEffect(() => {
+    fetchMap();
+    // Auto-poll every 15 seconds for real-time feel without hitting cloud limits too hard
+    const interval = setInterval(fetchMap, 15000);
+    return () => clearInterval(interval);
+  }, [fetchMap]);
 
-	const imageUrl =
-		mapData?.image_url && typeof mapData.image_url === "string"
-			? mapData.image_url
-			: null;
-	const imageBase64 =
-		mapData?.image && typeof mapData.image === "string"
-			? mapData.image.startsWith("data:")
-				? mapData.image
-				: `data:image/png;base64,${mapData.image}`
-			: null;
+  const imageUrl =
+    mapData?.image_url && typeof mapData.image_url === "string"
+      ? mapData.image_url
+      : null;
+  const imageBase64 =
+    mapData?.image && typeof mapData.image === "string"
+      ? mapData.image.startsWith("data:")
+        ? mapData.image
+        : `data:image/png;base64,${mapData.image}`
+      : null;
 
-	return (
-		<div className="flex flex-col py-4 px-4 sm:px-6 max-w-5xl mx-auto">
-			<div className="flex items-center justify-between mb-6">
-				<div className="flex items-center gap-4">
-					<ScanLine className="text-amber-400 w-8 h-8" />
-					<div>
-						<h1 className="text-2xl font-bold text-white tracking-tight">
-							LIDAR Map
-						</h1>
-						<p className="text-slate-400 text-sm">
-							Dreame D20 Pro floor map and obstacle data
-						</p>
-					</div>
-				</div>
-				<button
-					type="button"
-					onClick={fetchMap}
-					disabled={loading}
-					className="flex items-center gap-2 px-4 py-2 rounded-xl border border-white/10 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 text-sm disabled:opacity-50"
-				>
-					<RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-					Refresh
-				</button>
-			</div>
+  return (
+    <div className="flex flex-col py-4 px-4 sm:px-6 max-w-5xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-4">
+          <ScanLine className="text-amber-400 w-8 h-8" />
+          <div>
+            <h1 className="text-2xl font-bold text-white tracking-tight">
+              LIDAR Map
+            </h1>
+            <p className="text-slate-400 text-sm">
+              Dreame D20 Pro floor map and obstacle data
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={fetchMap}
+          disabled={loading}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl border border-white/10 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 text-sm disabled:opacity-50"
+        >
+          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+          Refresh
+        </button>
+      </div>
 
-			{loading && (
-				<div className="flex justify-center py-24 text-slate-500">
-					<RefreshCw className="w-8 h-8 animate-spin mr-2" />
-					Loading map…
-				</div>
-			)}
+      {loading && (
+        <div className="flex justify-center py-24 text-slate-500">
+          <RefreshCw className="w-8 h-8 animate-spin mr-2" />
+          Loading map…
+        </div>
+      )}
 
-			{error && (
-				<div
-					className={`flex items-start gap-3 p-4 rounded-2xl border ${
-						isTimeout
-							? "border-blue-500/20 bg-blue-500/10 text-blue-200"
-							: "border-amber-500/20 bg-amber-500/10 text-amber-200"
-					}`}
-				>
-					{isTimeout ? (
-						<Clock className="w-5 h-5 flex-shrink-0 mt-0.5" />
-					) : (
-						<AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-					)}
-					<div>
-						<p className="font-medium">
-							{isTimeout ? "Map request timed out" : "Map unavailable"}
-						</p>
-						<p className="text-sm opacity-80 mt-1">{error}</p>
-						{isTimeout && (
-							<p className="text-xs text-slate-400 mt-2">
-								The DreameHome cloud may be slow or unreachable. Try again in a
-								moment.
-							</p>
-						)}
-						{!isTimeout && (
-							<p className="text-xs text-slate-400 mt-2">
-								Ensure the backend is running, or set{" "}
-								<span className="text-slate-300">VITE_DREAME_MAP_URL</span> to
-								an alternate map endpoint. Default: GET /api/v1/map
-							</p>
-						)}
-					</div>
-				</div>
-			)}
+      {error && (
+        <div
+          className={`flex items-start gap-3 p-4 rounded-2xl border ${
+            isTimeout
+              ? "border-blue-500/20 bg-blue-500/10 text-blue-200"
+              : "border-amber-500/20 bg-amber-500/10 text-amber-200"
+          }`}
+        >
+          {isTimeout ? (
+            <Clock className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          ) : (
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          )}
+          <div>
+            <p className="font-medium">
+              {isTimeout ? "Map request timed out" : "Map unavailable"}
+            </p>
+            <p className="text-sm opacity-80 mt-1">{error}</p>
+            {isTimeout && (
+              <p className="text-xs text-slate-400 mt-2">
+                The DreameHome cloud may be slow or unreachable. Try again in a
+                moment.
+              </p>
+            )}
+            {!isTimeout && (
+              <p className="text-xs text-slate-400 mt-2">
+                Ensure the backend is running, or set{" "}
+                <span className="text-slate-300">VITE_DREAME_MAP_URL</span> to
+                an alternate map endpoint. Default: GET /api/v1/map
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
-			{!loading && !error && mapData && (
-				<div className="flex flex-col gap-6">
-					{imageUrl || imageBase64 ? (
-						<div className="relative rounded-2xl border border-white/10 bg-[#0f0f12]/80 overflow-hidden">
-							<div className="relative inline-block w-full">
-								<img
-									src={imageUrl || imageBase64 || ""}
-									alt="Dreame map"
-									className="w-full h-auto max-h-[70vh] object-contain bg-black/40"
-								/>
-								{mapData.map_data?.dimensions && (
-									<svg
-										className="absolute inset-0 w-full h-full pointer-events-none"
-										viewBox={`0 0 ${mapData.map_data.dimensions.width} ${mapData.map_data.dimensions.height}`}
-										preserveAspectRatio="xMidYMid meet"
-									>
-										{/* Virtual Walls (Red lines) */}
-										{mapData.map_data.virtual_walls?.map((wall, i) => {
-											const p1 = mapToPixel(wall.p1, mapData.map_data!.dimensions!);
-											const p2 = mapToPixel(wall.p2, mapData.map_data!.dimensions!);
-											return (
-												<line
-													key={`vw-${i}`}
-													x1={p1.x}
-													y1={p1.y}
-													x2={p2.x}
-													y2={p2.y}
-													stroke="rgba(239, 68, 68, 0.8)"
-													strokeWidth="2"
-													strokeDasharray="4,2"
-												/>
-											);
-										})}
+      {!loading && !error && mapData && (
+        <div className="flex flex-col gap-6">
+          {imageUrl || imageBase64 ? (
+            <div className="relative rounded-2xl border border-white/10 bg-[#0f0f12]/80 overflow-hidden">
+              <div className="relative inline-block w-full">
+                <img
+                  src={imageUrl || imageBase64 || ""}
+                  alt="Dreame map"
+                  className="w-full h-auto max-h-[70vh] object-contain bg-black/40"
+                />
+                {mapData.map_data?.dimensions && (
+                  <svg
+                    className="absolute inset-0 w-full h-full pointer-events-none"
+                    viewBox={`0 0 ${mapData.map_data.dimensions.width} ${mapData.map_data.dimensions.height}`}
+                    preserveAspectRatio="xMidYMid meet"
+                  >
+                    {/* Virtual Walls (Red lines) */}
+                    {mapData.map_data.virtual_walls?.map((wall, i) => {
+                      const p1 = mapToPixel(
+                        wall.p1,
+                        mapData.map_data!.dimensions!,
+                      );
+                      const p2 = mapToPixel(
+                        wall.p2,
+                        mapData.map_data!.dimensions!,
+                      );
+                      return (
+                        <line
+                          key={`vw-${i}`}
+                          x1={p1.x}
+                          y1={p1.y}
+                          x2={p2.x}
+                          y2={p2.y}
+                          stroke="rgba(239, 68, 68, 0.8)"
+                          strokeWidth="2"
+                          strokeDasharray="4,2"
+                        />
+                      );
+                    })}
 
-										{/* No-Go Areas (Red overlays) */}
-										{mapData.map_data.no_go_areas?.map((area, i) => {
-											const points = [area.p1, area.p2, area.p3, area.p4]
-												.map((p) => {
-													const px = mapToPixel(p, mapData.map_data!.dimensions!);
-													return `${px.x},${px.y}`;
-												})
-												.join(" ");
-											return (
-												<polygon
-													key={`nga-${i}`}
-													points={points}
-													fill="rgba(239, 68, 68, 0.2)"
-													stroke="rgba(239, 68, 68, 0.5)"
-													strokeWidth="1"
-												/>
-											);
-										})}
+                    {/* No-Go Areas (Red overlays) */}
+                    {mapData.map_data.no_go_areas?.map((area, i) => {
+                      const points = [area.p1, area.p2, area.p3, area.p4]
+                        .map((p) => {
+                          const px = mapToPixel(
+                            p,
+                            mapData.map_data!.dimensions!,
+                          );
+                          return `${px.x},${px.y}`;
+                        })
+                        .join(" ");
+                      return (
+                        <polygon
+                          key={`nga-${i}`}
+                          points={points}
+                          fill="rgba(239, 68, 68, 0.2)"
+                          stroke="rgba(239, 68, 68, 0.5)"
+                          strokeWidth="1"
+                        />
+                      );
+                    })}
 
-										{/* No-Mop Areas (Blue overlays) */}
-										{mapData.map_data.no_mop_areas?.map((area, i) => {
-											const points = [area.p1, area.p2, area.p3, area.p4]
-												.map((p) => {
-													const px = mapToPixel(p, mapData.map_data!.dimensions!);
-													return `${px.x},${px.y}`;
-												})
-												.join(" ");
-											return (
-												<polygon
-													key={`nma-${i}`}
-													points={points}
-													fill="rgba(59, 130, 246, 0.2)"
-													stroke="rgba(59, 130, 246, 0.5)"
-													strokeWidth="1"
-												/>
-											);
-										})}
+                    {/* No-Mop Areas (Blue overlays) */}
+                    {mapData.map_data.no_mop_areas?.map((area, i) => {
+                      const points = [area.p1, area.p2, area.p3, area.p4]
+                        .map((p) => {
+                          const px = mapToPixel(
+                            p,
+                            mapData.map_data!.dimensions!,
+                          );
+                          return `${px.x},${px.y}`;
+                        })
+                        .join(" ");
+                      return (
+                        <polygon
+                          key={`nma-${i}`}
+                          points={points}
+                          fill="rgba(59, 130, 246, 0.2)"
+                          stroke="rgba(59, 130, 246, 0.5)"
+                          strokeWidth="1"
+                        />
+                      );
+                    })}
 
-										{/* Path / Movement Trail (Amber polyline) */}
-										{mapData.map_data.path && mapData.map_data.path.length > 1 && (
-											<polyline
-												points={mapData.map_data.path
-													.map((p) => {
-														const px = mapToPixel(p, mapData.map_data!.dimensions!);
-														return `${px.x},${px.y}`;
-													})
-													.join(" ")}
-												fill="none"
-												stroke="rgba(251, 191, 36, 0.6)"
-												strokeWidth="1.5"
-												strokeLinecap="round"
-												strokeLinejoin="round"
-											/>
-										)}
+                    {/* Path / Movement Trail (Amber polyline) */}
+                    {mapData.map_data.path &&
+                      mapData.map_data.path.length > 1 && (
+                        <polyline
+                          points={mapData.map_data.path
+                            .map((p) => {
+                              const px = mapToPixel(
+                                p,
+                                mapData.map_data!.dimensions!,
+                              );
+                              return `${px.x},${px.y}`;
+                            })
+                            .join(" ")}
+                          fill="none"
+                          stroke="rgba(251, 191, 36, 0.6)"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      )}
 
-										{/* Robot Position Marker */}
-										{mapData.map_data.robot_position && (
-											<g transform={`translate(${mapToPixel(mapData.map_data.robot_position, mapData.map_data.dimensions).x}, ${mapToPixel(mapData.map_data.robot_position, mapData.map_data.dimensions).y})`}>
-												<circle r="6" fill="#fbbf24" className="animate-pulse" />
-												<circle r="6" fill="none" stroke="white" strokeWidth="1.5" />
-											</g>
-										)}
-									</svg>
-								)}
-							</div>
-							<p className="p-2 text-xs text-slate-500 border-t border-white/5">
-								Source: Dreame D20 Pro (Live Telemetry)
-							</p>
-						</div>
-					) : (
-						<div className="rounded-2xl border border-white/10 bg-[#0f0f12]/80 p-4">
-							<p className="text-slate-400 text-sm mb-2">
-								Map endpoint returned JSON (no image). Keys:{" "}
-								{Object.keys(mapData).join(", ")}
-							</p>
-						</div>
-					)}
-					<div className="rounded-2xl border border-white/10 bg-[#0f0f12]/80 overflow-hidden">
-						<button
-							type="button"
-							onClick={() => setShowRaw((v) => !v)}
-							className="w-full px-4 py-3 flex items-center justify-between text-left text-sm font-medium text-slate-300 hover:bg-white/5"
-						>
-							<span>Raw response</span>
-							<span className="text-slate-500">
-								{showRaw ? "Hide" : "Show"}
-							</span>
-						</button>
-						{showRaw && (
-							<pre className="p-4 pt-0 text-xs text-slate-400 overflow-auto max-h-64 border-t border-white/5 font-mono whitespace-pre-wrap break-all">
-								{JSON.stringify(mapData, null, 2)}
-							</pre>
-						)}
-					</div>
-				</div>
-			)}
+                    {/* Robot Position Marker */}
+                    {mapData.map_data.robot_position && (
+                      <g
+                        transform={`translate(${mapToPixel(mapData.map_data.robot_position, mapData.map_data.dimensions).x}, ${mapToPixel(mapData.map_data.robot_position, mapData.map_data.dimensions).y})`}
+                      >
+                        <circle
+                          r="6"
+                          fill="#fbbf24"
+                          className="animate-pulse"
+                        />
+                        <circle
+                          r="6"
+                          fill="none"
+                          stroke="white"
+                          strokeWidth="1.5"
+                        />
+                      </g>
+                    )}
+                  </svg>
+                )}
+              </div>
+              <p className="p-2 text-xs text-slate-500 border-t border-white/5">
+                Source: Dreame D20 Pro (Live Telemetry)
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-white/10 bg-[#0f0f12]/80 p-4">
+              <p className="text-slate-400 text-sm mb-2">
+                Map endpoint returned JSON (no image). Keys:{" "}
+                {Object.keys(mapData).join(", ")}
+              </p>
+            </div>
+          )}
+          <div className="rounded-2xl border border-white/10 bg-[#0f0f12]/80 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowRaw((v) => !v)}
+              className="w-full px-4 py-3 flex items-center justify-between text-left text-sm font-medium text-slate-300 hover:bg-white/5"
+            >
+              <span>Raw response</span>
+              <span className="text-slate-500">
+                {showRaw ? "Hide" : "Show"}
+              </span>
+            </button>
+            {showRaw && (
+              <pre className="p-4 pt-0 text-xs text-slate-400 overflow-auto max-h-64 border-t border-white/5 font-mono whitespace-pre-wrap break-all">
+                {JSON.stringify(mapData, null, 2)}
+              </pre>
+            )}
+          </div>
+        </div>
+      )}
 
-			{!loading && !error && !mapData && (
-				<p className="text-slate-500 text-sm">No map data returned.</p>
-			)}
-		</div>
-	);
+      {!loading && !error && !mapData && (
+        <p className="text-slate-500 text-sm">No map data returned.</p>
+      )}
+    </div>
+  );
 }

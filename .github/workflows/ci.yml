@@ -18,11 +18,25 @@ jobs:
         with:
           version: "latest"
       - run: uv sync --frozen --dev
-      - run: uv run ruff check src/
+      - run: uv run ruff check src tests
+
+  lint-webapp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: webapp/package-lock.json
+      - run: npm ci
+        working-directory: webapp
+      - run: npm run biome:ci
+        working-directory: webapp
 
   test-mocked:
     runs-on: ubuntu-latest
-    needs: lint
+    needs: [lint, lint-webapp]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

@@ -8,7 +8,7 @@ async def main():
     
     # Use the known working IP and Null Token
     client = DreameHomeClient(
-        ip="192.168.0.179",
+        ip="192.168.0.178",
         token="0" * 32
     )
     

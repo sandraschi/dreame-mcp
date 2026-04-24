@@ -6,6 +6,15 @@ All notable changes to dreame-mcp are documented here.
 
 ## [Unreleased]
 
+### Fixed — Local control (Tasshack)
+
+- **Action RPC**: `control()` now calls `DreameVacuumProtocol.action(siid, aiid, [])` instead of `send("action", {did: cloud_did, ...})`, matching Tasshack’s miio request shape (cloud numeric `did` is not the action request id).
+- **Cloud device pick**: no longer falls back to `devices[0]` when cloud `localip` is wrong; use `DREAME_DID` or a single unambiguous device. If `DREAME_DID` is set, it is honored for cloud map/DID sync.
+- **Default `DREAME_REF_PATH`**: `D:/Dev/repos/tasshack_dreame_vacuum_ref` (aligned with README / `.env.example`). **`disconnect()`** on `DreameHomeClient` for clean shutdown.
+- **Portmanteau / tests**: `dreame_tool` is documented and tested as **Markdown**; `fetch_*` helpers cover **dict** contracts. `scripts/test_map_fetch.py` imports `_bootstrap_protocol`.
+- **Lint**: Ruff on `src` + `tests`; Biome `biome:ci` for `webapp` (overrides for Tailwind CSS, `Map.tsx`, `MissionControl.tsx`). CI runs Ruff + Biome + mocked pytest.
+- **Strings**: ASCII markdown for battery/control/error lines (avoids mojibake in logs).
+
 ### Fixed — LIDAR map download hang (critical)
 
 - **`asyncio.wait_for()` on all `run_in_executor` calls**: `get_map()` (45s), `get_status()` / `control()` (35s), `connect()` (30s). Previously, any cloud timeout cascaded into indefinite blocking of the REST endpoint and MCP tool.

@@ -12,8 +12,8 @@ Env vars:
     DREAME_TOKEN        Lokal MiIO token
     DREAME_DID          Device ID (optional, auto-selected if single device)
     DREAME_AUTH_KEY     Refresh token from previous login (optional, speeds up startup)
-    DREAME_REF_PATH     Path to external/dreame-vacuum clone
-                        (default: sibling of this repo at D:/Dev/repos/external/dreame-vacuum)
+    DREAME_REF_PATH     Path to Tasshack/dreame-vacuum clone
+                        (default: D:/Dev/repos/tasshack_dreame_vacuum_ref)
 """
 
 from __future__ import annotations
@@ -25,13 +25,12 @@ import logging
 import os
 import sys
 import types as _types
-from datetime import datetime
-from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 
 logger = logging.getLogger("dreame-mcp.client")
 
@@ -47,7 +46,7 @@ CONNECT_TIMEOUT = 30  # login + MQTT setup
 # Tasshack ref clone bootstrap
 # ---------------------------------------------------------------------------
 
-_REF_DEFAULT = Path("D:/Dev/repos/external/dreame-vacuum")
+_REF_DEFAULT = Path("D:/Dev/repos/tasshack_dreame_vacuum_ref")
 _DREAME_PKG = "custom_components.dreame_vacuum.dreame"
 
 _protocol_cls = None  # DreameVacuumProtocol (Local + Cloud)
@@ -205,6 +204,47 @@ _ACTION_MAP = {
 }
 
 
+def _pick_cloud_device(devices: list, want_ip: str | None) -> dict | None:
+    """Select one device from get_devices() for map/DID. Avoid wrong-robot `devices[0]`."""
+    if not devices:
+        return None
+    if want_ip:
+        m = next((d for d in devices if d.get("localip") == want_ip), None)
+        if m:
+            return m
+    if len(devices) == 1:
+        d0 = devices[0]
+        lip = d0.get("localip")
+        if want_ip and lip and str(lip) not in ("", "Unknown", "unknown") and lip != want_ip:
+            logger.warning(
+                "Only one cloud device: localip=%r != DREAME_IP=%r — set DREAME_DID if this is the wrong device.",
+                lip,
+                want_ip,
+            )
+        return d0
+    if want_ip:
+        logger.error(
+            "DREAME_IP not in cloud list (stale Dreame app data). Set DREAME_DID. Reported localips: %s",
+            [d.get("localip") for d in devices],
+        )
+    else:
+        logger.error("Multiple cloud devices: set DREAME_DID or DREAME_IP to pick the right vacuum.")
+    return None
+
+
+def _miot_did_slots(n: int, cloud_did: str | None) -> list[str]:
+    """Miot get_properties `did` is a per-request slot / correlation id (Tasshack uses property enum).
+
+    The cloud numeric device id is only one valid pattern. When it is missing, use "0".."n-1"
+    (never the string "None" — that breaks local miio).
+    """
+    if cloud_did:
+        s = str(cloud_did).strip()
+        if s and s.lower() != "none":
+            return [s] * n
+    return [str(i) for i in range(n)]
+
+
 # ---------------------------------------------------------------------------
 # DreameHomeClient
 # ---------------------------------------------------------------------------
@@ -235,6 +275,8 @@ class DreameHomeClient:
         self._protocol = None
         self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="dreame")
         self._map_manager = None
+        # Last exception from a failed protocol call (e.g. miio discover) for clearer API errors.
+        self._last_protocol_error: str | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -282,9 +324,6 @@ class DreameHomeClient:
             logger.error("control(%s) timed out after %ds", cmd, EXECUTOR_TIMEOUT)
             return {"success": False, "error": f"Control request timed out ({EXECUTOR_TIMEOUT}s)"}
 
-
-
-
     @property
     def connected(self) -> bool:
         """True if protocol is initialized (local IP set or cloud connected)."""
@@ -316,6 +355,8 @@ class DreameHomeClient:
             logger.error("Bootstrap failed: %s", e)
             return False
 
+        # Tasshack: local control requires (ip, token) with null token; prefer_cloud=False so
+        # status/control use UDP miio, not Xiaomi cloud web RPC (unreliable for DreameHome).
         self._protocol = _protocol_cls(
             ip=self._ip,
             token=self._token,
@@ -330,22 +371,26 @@ class DreameHomeClient:
         if self._username and self._password and self._protocol.cloud:
             ok = self._protocol.cloud.login()
             if ok:
-                logger.info("Cloud login OK (maps only)")
-                # Auto-discover DID if not provided — cloud does NOT return tokens
-                if not self._did:
+                logger.info("Cloud login OK (maps / DID sync)")
+                if self._did:
+                    # Keep cloud session aligned with explicit DREAME_DID (do not trust stale localip).
+                    self._protocol.cloud._did = str(self._did)
+                else:
                     devices = self._protocol.cloud.get_devices()
                     if isinstance(devices, list) and devices:
-                        target = None
-                        if self._ip:
-                            target = next((d for d in devices if d.get("localip") == self._ip), None)
-                        if not target:
-                            target = devices[0]
+                        target = _pick_cloud_device(devices, self._ip)
                         if target:
                             self._did = str(target.get("did", ""))
                             self._protocol.cloud._did = self._did
-                            logger.info("Auto-discovered DID=%s", self._did)
+                            logger.info("Auto-discovered DID=%s (name=%s)", self._did, target.get("name", "?"))
             else:
-                logger.warning("Cloud login failed — local-only mode")
+                c = self._protocol.cloud
+                why = "check DREAME_USER, DREAME_PASSWORD, DREAME_COUNTRY or account captcha/2FA"
+                if getattr(c, "auth_failed", False):
+                    why = "auth rejected (wrong password or expired session)"
+                logger.warning("Cloud login failed; local-only (%s). For maps, fix cloud or set DREAME_DID.", why)
+
+        self._apply_local_miot_tuning()
 
         if not self._protocol.connected and not self._ip:
             logger.error("No local IP and cloud not connected")
@@ -358,30 +403,57 @@ class DreameHomeClient:
             except Exception as e:
                 logger.warning("Map manager init failed: %s", e)
 
-        logger.info(
-            "Connected [ip=%s null_token=%s did=%s]",
-            self._ip, self._token == "0" * 32, self._did
-        )
+        logger.info("Connected [ip=%s null_token=%s did=%s]", self._ip, self._token == "0" * 32, self._did)
         return True
+
+    def disconnect(self) -> None:
+        """Tear down protocol; executor is kept for process lifetime (server exit)."""
+        if self._protocol is not None:
+            try:
+                self._protocol.disconnect()
+            except Exception as e:
+                logger.warning("protocol.disconnect failed: %s", e)
+        self._protocol = None
+        self._map_manager = None
+
+    def _apply_local_miot_tuning(self) -> None:
+        """DreameVacuumDeviceProtocol uses MiIOProtocol(..., timeout=2); slow Wi-Fi often needs more."""
+        dev = getattr(self._protocol, "device", None)
+        if not dev or not self._ip:
+            return
+        try:
+            cur = int(getattr(dev, "_timeout", 5))
+        except (TypeError, ValueError):
+            cur = 5
+        dev._timeout = max(cur, 10)
+        logger.debug("Local miio socket timeout set to %s s (device was %s)", dev._timeout, cur)
+
+    def local_miot_ready(self) -> bool:
+        """True only after a successful local UDP miio discover (unrelated to DREAME_IP in env)."""
+        dev = getattr(self._protocol, "device", None) if self._protocol else None
+        return bool(dev) and bool(getattr(dev, "connected", False))
 
     def _get_status_sync(self) -> DreameStatus:
         if not self._protocol:
             return DreameStatus(error="Not connected")
         try:
-            did = str(self._did)
-            props = [
-                {**_PROP_STATE, "did": did},
-                {**_PROP_ERROR, "did": did},
-                {**_PROP_BATTERY, "did": did},
-                {**_PROP_CHARGING, "did": did},
-                {**_PROP_STATUS, "did": did},
-                {**_PROP_TIME, "did": did},
-                {**_PROP_AREA, "did": did},
-                {**_PROP_FANSPEED, "did": did},
+            dids = _miot_did_slots(8, str(self._did) if self._did else None)
+            bases = [
+                _PROP_STATE,
+                _PROP_ERROR,
+                _PROP_BATTERY,
+                _PROP_CHARGING,
+                _PROP_STATUS,
+                _PROP_TIME,
+                _PROP_AREA,
+                _PROP_FANSPEED,
             ]
-            result = self._safe_call("send", "get_properties", props)
+            props = [{**b, "did": d} for b, d in zip(bases, dids, strict=True)]
+            result = self._safe_call("get_properties", props)
             if result is None:
-                return DreameStatus(error="No response from device")
+                return DreameStatus(
+                    error=self._last_protocol_error or "No response from device",
+                )
 
             raw = {f"{r['siid']}.{r['piid']}": r.get("value") for r in result if "value" in r}
 
@@ -413,21 +485,20 @@ class DreameHomeClient:
     def _control_sync(self, cmd: str) -> dict:
         if not self._protocol:
             return {"success": False, "error": "Not connected"}
-        
-        # Use Action Mapping from constants
+
         if cmd not in _ACTION_MAP:
-             return {"success": False, "error": f"Unknown command: {cmd}"}
-        
+            return {"success": False, "error": f"Unknown command: {cmd}"}
+        # Tasshack DreameVacuumProtocol.action() encodes `did` as f"{siid}.{aiid}" in the
+        # miio/miot request — it must not use the cloud numeric device id here.
         try:
             siid, aiid = _ACTION_MAP[cmd]
-            result = self._safe_call(
-                "send",
-                "action",
-                {"did": str(self._did), "siid": siid, "aiid": aiid, "in": []},
-            )
+            result = self._safe_call("action", siid, aiid, [])
             if result is not None:
                 return {"success": True, "message": f"Sent {cmd}", "result": result}
-            return {"success": False, "error": f"No response for {cmd}"}
+            return {
+                "success": False,
+                "error": self._last_protocol_error or f"No response for {cmd}",
+            }
         except Exception as e:
             logger.exception("control(%s) failed", cmd)
             return {"success": False, "error": str(e)}
@@ -436,15 +507,18 @@ class DreameHomeClient:
         """Internal bridge to call self._protocol methods safely, catching all protocol crashes."""
         if not self._protocol:
             return None
-        
+
         func = getattr(self._protocol, method, None)
         if not func:
             logger.warning("Protocol object missing method: %s", method)
             return None
-            
+
         try:
-            return func(*args, **kwargs)
+            out = func(*args, **kwargs)
+            self._last_protocol_error = None
+            return out
         except Exception as e:
+            self._last_protocol_error = str(e)
             logger.error("Protocol call failed [%s]: %s", method, e)
             return None
 
@@ -485,7 +559,8 @@ class DreameHomeClient:
             if not object_name or not str(object_name).strip("/"):
                 logger.info("object_name unavailable; trying property-based map retrieval (siid=23)")
                 try:
-                    res = self._safe_call("get_properties", [{"did": str(self._did), "siid": 23, "piid": 1}])
+                    mslot = _miot_did_slots(1, str(self._did) if self._did else None)[0]
+                    res = self._safe_call("get_properties", [{"did": mslot, "siid": 23, "piid": 1}])
                     if res and isinstance(res, list) and "value" in res[0]:
                         raw_val = res[0]["value"]
                         if isinstance(raw_val, str) and raw_val:
@@ -600,7 +675,9 @@ class DreameHomeClient:
                                     "height": getattr(map_data.dimensions, "height", 0),
                                     "width": getattr(map_data.dimensions, "width", 0),
                                     "grid_size": getattr(map_data.dimensions, "grid_size", 50),
-                                } if getattr(map_data, "dimensions", None) else None,
+                                }
+                                if getattr(map_data, "dimensions", None)
+                                else None,
                             }
                 except Exception as e:
                     logger.warning("Map decode/render failed: %s", e)
@@ -636,7 +713,7 @@ def client_from_env() -> DreameHomeClient | None:
     # Hybrid Mode Logic:
     # 1. Local-only: Must have IP (token is optional, defaults to 000... for circumvention)
     # 2. Cloud: Must have User + Password
-    
+
     if not (user and pwd) and not ip:
         logger.warning("No credentials (cloud or local) set â€” running in stub mode")
         return None

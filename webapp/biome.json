@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.12/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.4.11/schema.json",
   "vcs": {
     "enabled": false,
     "clientKind": "git",
@@ -15,12 +15,50 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "recommended": true,
+      "style": {
+        "noNonNullAssertion": "off"
+      }
     }
   },
   "javascript": {
     "formatter": {
       "quoteStyle": "double"
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["**/*.css"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noUnknownAtRules": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/pages/Map.tsx"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "noSvgWithoutTitle": "off"
+          },
+          "suspicious": {
+            "noArrayIndexKey": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/pages/MissionControl.tsx"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noExplicitAny": "off"
+          }
+        }
+      }
+    }
+  ]
 }

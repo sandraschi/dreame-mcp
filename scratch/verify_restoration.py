@@ -13,7 +13,7 @@ def test_bootstrap():
     
     # Mock some env vars if missing to see if client constructs
     if not os.environ.get("DREAME_IP"):
-        os.environ["DREAME_IP"] = "192.168.1.100"
+        os.environ["DREAME_IP"] = "192.168.0.178"
         os.environ["DREAME_TOKEN"] = "abcdef1234567890"
         os.environ["DREAME_REF_PATH"] = "D:/Dev/repos/external/dreame-vacuum"
     

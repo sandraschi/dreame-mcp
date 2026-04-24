@@ -27,4 +27,4 @@ def probe_vacuum(ip, port=54321):
         sock.close()
 
 if __name__ == "__main__":
-    probe_vacuum("192.168.0.179")
+    probe_vacuum("192.168.0.178")

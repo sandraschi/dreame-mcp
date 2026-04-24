@@ -8,7 +8,7 @@ import sys
 # Add src to path
 sys.path.append(os.path.join(os.getcwd(), "src"))
 
-from dreame_mcp.client import _REF_DEFAULT, _bootstrap_tasshack, client_from_env
+from dreame_mcp.client import _REF_DEFAULT, _bootstrap_protocol, client_from_env
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -20,7 +20,7 @@ async def test_map_variants():
     c = client_from_env()
 
     # Ensure tasshack is loaded
-    _bootstrap_tasshack(_REF_DEFAULT)
+    _bootstrap_protocol(_REF_DEFAULT)
 
     logger.info(f"Connecting to Dreame cloud for user: {c._username}")
     ok = await c.connect()

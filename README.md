@@ -52,6 +52,14 @@ Protocol layer extracted from [Tasshack/dreame-vacuum](https://github.com/Tassha
 | `DREAME_AUTH_KEY` |  | Refresh token from previous login (speeds up startup) |
 | `DREAME_REF_PATH` |  | Path to tasshack ref clone (default: `D:/Dev/repos/tasshack_dreame_vacuum_ref`) |
 | `DREAME_MCP_PORT` |  | Backend port (default: `10894`) |
+| `DREAME_IP` / `DREAME_TOKEN` |  | Local miio (null token if token empty); hybrid with cloud for maps |
+
+## Development and tests
+
+- **Python** (repo root): `uv run ruff check src tests`, `uv run pytest` (CI sets `PYTHONPATH=src`; on Windows: `$env:PYTHONPATH = 'src'; uv run pytest tests`).
+- **MCP tool `dreame(operation=...)`** returns **Markdown** for LLM context. For **structured dicts** (same shapes as the REST handlers), import `fetch_status_data`, `fetch_map_data`, and `execute_control_data` from `dreame_mcp.portmanteau` (see `tests/test_map.py`).
+- **Live tests** (real robot + cloud): `DREAME_LIVE=1 uv run pytest tests --live` or `--live` flag.
+- **Webapp** (`webapp/`): `npm ci` then `npm run biome:ci` and `npm run build`.
 
 ## Connection Modes
 
@@ -72,7 +80,7 @@ For users avoiding the DreameHome cloud for controls, you do not need to extract
 1. **Configure credentials**: Copy `.env.example` to `.env` and fill in your details.
    ```powershell
    # Typical Hybrid Setup (.env)
-   DREAME_IP=192.168.0.179
+   DREAME_IP=192.168.0.178
    DREAME_USER=your@email.com
    DREAME_PASSWORD=yourpassword
    ```
@@ -109,6 +117,10 @@ See **[docs/MAP_AND_ROBOTICS.md](docs/MAP_AND_ROBOTICS.md)** for fleet integrati
 
 Rendered PNG requires the Tasshack dependency chain: `py-mini-racer`, `numpy`, `Pillow`, `cryptography`, etc.
 If `dreame(operation='map')` returns `render_error`, decoding deps may be missing; **`raw_b64`** is still the portable fallback.
+
+## Troubleshooting: `Unable to discover the device` / status 502
+
+`GET /api/v1/health` includes **`local_miot`**: `true` only after a successful UDP miio handshake to `DREAME_IP` (port 54321). If you see **`Unable to discover the device` `192.168.x.x`** in logs or **`local_miot: false`**, the robot did not answer the standard miio discovery on the LAN. Typical causes: **DreameHome-only firmware** (no or limited LAN miio), **wrong IP**, **null token not accepted** (add a real **`DREAME_TOKEN`**), or **cloud login failed** (fix **`DREAME_USER` / `DREAME_PASSWORD` / `DREAME_COUNTRY`**, captcha, 2FA) so you get **`DREAME_DID`** and maps. Set **`DREAME_DID`** manually in `.env` when you know it from the app or cloud.
 
 ## Docs
 

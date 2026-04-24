@@ -1,4 +1,4 @@
-﻿"""Portmanteau tool dreame(operation=...) for Dreame D20 Pro Plus (FastMCP 3.1).
+"""Portmanteau tool dreame(operation=...) for Dreame D20 Pro Plus (FastMCP 3.1).
 
 Talks to DreameHome cloud via DreameHomeClient (no local token needed).
 """
@@ -39,8 +39,8 @@ async def dreame_tool(
         if op == "battery":
             data = await fetch_status_data(client)
             if data.get("success"):
-                return f"### ðŸ”‹ Battery: {data.get('battery')}%"
-            return "### ðŸ”‹ Battery: Unknown"
+                return f"### Battery: {data.get('battery')}%"
+            return "### Battery: Unknown"
 
         if op == "map":
             data = await fetch_map_data(client)
@@ -51,7 +51,7 @@ async def dreame_tool(
             return _format_control_md(data, op)
 
         return (
-            f"### âŒ Error: Unknown operation `{operation}`\n\n"
+            f"### Error: Unknown operation `{operation}`\n\n"
             "**Valid operations:**\n"
             "- `status`: Full telemetry\n"
             "- `map`: LIDAR map retrieval\n"
@@ -61,7 +61,7 @@ async def dreame_tool(
 
     except Exception as e:
         logger.exception("dreame(%s) unhandled error", op)
-        return f"### ðŸš¨ Crash in `dreame({op})`\n\n**Error:** {e}\n**ID:** `{correlation_id}`"
+        return f"### Error: crash in `dreame({op})`\n\n**Error:** {e}\n**ID:** `{correlation_id}`"
 
 
 # ---------------------------------------------------------------------------
@@ -91,13 +91,13 @@ async def fetch_status_data(client) -> dict:
 
 async def fetch_map_data(client) -> dict:
     if client is None:
-        return {"success": False, "error": "Disconnected â€” Set DREAME_IP/TOKEN or USER/PWD."}
+        return {"success": False, "error": "Disconnected - set DREAME_IP/TOKEN or DREAME_USER/PASSWORD."}
     return await client.get_map()
 
 
 async def execute_control_data(client, cmd: str) -> dict:
     if client is None:
-        return {"success": False, "error": "No client â€” Check environment variables."}
+        return {"success": False, "error": "No client - check environment variables."}
     return await client.control(cmd)
 
 
@@ -115,7 +115,7 @@ def _format_status_md(data: dict) -> str:
         "## Dreame Robot Status",
         f"- **State:** {str(data.get('state', 'unknown')).capitalize()}",
         f"- **Battery:** {data.get('battery', 0)}%",
-        f"- **Cleaned Area:** {data.get('cleaned_area', 0)} mÂ²",
+        f"- **Cleaned Area:** {data.get('cleaned_area', 0)} m2",
         f"- **Cleaning Time:** {data.get('cleaning_time', 0) // 60}m {data.get('cleaning_time', 0) % 60}s",
         f"- **Charging:** {'[YES]' if data.get('is_charging') else '[NO]'}",
         f"- **Cleaning:** {'[ACTIVE]' if data.get('is_cleaning') else '[IDLE]'}",
@@ -127,7 +127,10 @@ def _format_status_md(data: dict) -> str:
 def _format_map_md(data: dict) -> str:
     if not data.get("success"):
         error_msg = data.get("error", "Unknown error")
-        return f"### [MAP ERROR] Map Retrieval Failed\n\n**Error:** {error_msg}\n\n> [!TIP]\n> Ensure the robot has completed its first mapping run."
+        return (
+            f"### [MAP ERROR] Map Retrieval Failed\n\n**Error:** {error_msg}\n\n"
+            "> [!TIP]\n> Ensure the robot has completed its first mapping run."
+        )
 
     lines = [
         "## LIDAR Map Summary",
@@ -141,7 +144,7 @@ def _format_map_md(data: dict) -> str:
         pos = md.get("robot_position")
         if pos:
             lines.append(f"- **Robot Position:** ({pos.get('x', 0)}, {pos.get('y', 0)})")
-        
+
         path = md.get("path", [])
         if path:
             lines.append(f"- **Movement Trail:** {len(path)} points")
@@ -163,8 +166,8 @@ def _format_map_md(data: dict) -> str:
 
 def _format_control_md(data: dict, cmd: str) -> str:
     if data.get("success"):
-        return f"### âœ… Command Executed\n\n**Operation:** `{cmd}`\n**Message:** {data.get('message', 'Success')}"
-    return f"### âŒ Control Failed\n\n**Operation:** `{cmd}`\n**Error:** {data.get('error', 'Unknown error')}"
+        return f"### Command executed\n\n**Operation:** `{cmd}`\n**Message:** {data.get('message', 'Success')}"
+    return f"### Control failed\n\n**Operation:** `{cmd}`\n**Error:** {data.get('error', 'Unknown error')}"
 
 
 def _stub_status() -> dict:
@@ -177,5 +180,5 @@ def _stub_status() -> dict:
         "cleaned_area_m2": 0.0,
         "cleaning_time_s": 0,
         "fan_speed": "0",
-        "message": "Stub â€” set DREAME_USER and DREAME_PASSWORD",
+        "message": "Stub - set DREAME_USER and DREAME_PASSWORD",
     }
