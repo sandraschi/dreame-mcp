@@ -21,6 +21,7 @@ dependencies = [
     "py-mini-racer>=0.6.0",
     "python-dotenv>=1.2.2",
     "python-miio>=0.5.12",
+    "zeroconf>=0.32,<0.140",  # python-miio needs ServiceListener (removed in 0.140+)
     "prefab-ui>=0.14.0",
 ]
 

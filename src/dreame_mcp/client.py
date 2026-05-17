@@ -13,7 +13,7 @@ Env vars:
     DREAME_DID          Device ID (optional, auto-selected if single device)
     DREAME_AUTH_KEY     Refresh token from previous login (optional, speeds up startup)
     DREAME_REF_PATH     Path to Tasshack/dreame-vacuum clone
-                        (default: D:/Dev/repos/tasshack_dreame_vacuum_ref)
+                        (default: D:/Dev/repos/external/tasshack_dreame_vacuum_ref)
 """
 
 from __future__ import annotations
@@ -48,24 +48,32 @@ CONNECT_TIMEOUT = 30  # login + MQTT setup
 # Tasshack ref clone bootstrap
 # ---------------------------------------------------------------------------
 
-_REF_DEFAULT = Path("D:/Dev/repos/tasshack_dreame_vacuum_ref")
+_REF_DEFAULT = Path("D:/Dev/repos/external/tasshack_dreame_vacuum_ref")
 _DREAME_PKG = "custom_components.dreame_vacuum.dreame"
 
 _protocol_cls = None  # DreameVacuumProtocol (Local + Cloud)
+_cloud_cls = None  # DreameVacuumDreameHomeCloudProtocol (cloud-only, for commands)
 _map_manager_cls = None  # DreameMapVacuumMapManager (optional, heavy)
 _map_decoder_cls = None  # DreameVacuumMapDecoder (static decode_map on map.py)
 _map_renderer_cls = None  # DreameVacuumMapRenderer (render_map → bytes)
 
 
 def _stub_miio():
-    """Stub out miio only if not installed, avoiding AttributeError on .send() if real miio is available."""
-    if importlib.util.find_spec("miio"):
-        return
-
+    """Stub out miio if not installed or broken (incompatible zeroconf, etc.)."""
     if "miio" in sys.modules:
         return
 
-    logger.warning("python-miio not found â€” using stubs (local control will fail)")
+    try:
+        import miio.miioprotocol  # noqa: F401 — verify miio is actually importable
+        return
+    except (ImportError, AttributeError):
+        pass
+
+    for key in list(sys.modules):
+        if key.startswith("miio"):
+            del sys.modules[key]
+
+    logger.warning("python-miio not found or broken â€” using stubs (local control will fail)")
     miio_mod = _types.ModuleType("miio")
     proto_mod = _types.ModuleType("miio.miioprotocol")
 
@@ -104,7 +112,7 @@ def _load_module(name: str, path: Path):
 
 def _bootstrap_protocol(ref_path: Path):
     """Load unified protocol + map from the external reference repo. Idempotent."""
-    global _protocol_cls, _map_manager_cls, _map_decoder_cls, _map_renderer_cls
+    global _protocol_cls, _cloud_cls, _map_manager_cls, _map_decoder_cls, _map_renderer_cls
 
     if _protocol_cls is not None:
         return
@@ -142,6 +150,7 @@ def _bootstrap_protocol(ref_path: Path):
     # Load protocol (unified local/cloud)
     proto_mod = _load_module(f"{_DREAME_PKG}.protocol", dreame_dir / "protocol.py")
     _protocol_cls = proto_mod.DreameVacuumProtocol
+    _cloud_cls = getattr(proto_mod, "DreameVacuumDreameHomeCloudProtocol", None)
 
     # Load map
     try:
@@ -293,12 +302,13 @@ class DreameHomeClient:
         self._auth_key = auth_key
         self._ref_path = ref_path or _REF_DEFAULT
         self._protocol = None
+        self._cloud = None
         self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="dreame")
         self._map_manager = None
         self._map_renderer = None
         # Serialize map downloads (dashboard + status poll can overlap the executor).
         self._map_fetch_lock = threading.Lock()
-        # Last exception from a failed protocol call (e.g. miio) for clearer API errors.
+        # Last exception from a failed protocol call (e.g. miio discover) for clearer API errors.
         self._last_protocol_error: str | None = None
 
     # ------------------------------------------------------------------
@@ -349,13 +359,13 @@ class DreameHomeClient:
 
     @property
     def connected(self) -> bool:
-        """True if protocol is initialized (local IP set or cloud connected)."""
-        if not self._protocol:
-            return False
-        try:
-            return bool(getattr(self._protocol, "connected", False)) or bool(self._ip)
-        except Exception:
-            return False
+        """True if cloud command protocol is logged in."""
+        if self._cloud is not None:
+            try:
+                return bool(self._cloud.logged_in)
+            except Exception:
+                pass
+        return False
 
     @property
     def auth_key(self) -> str | None:
@@ -371,82 +381,98 @@ class DreameHomeClient:
         return None
 
     def _connect_sync(self) -> bool:
-        """Sync worker for connect(). Bootstraps Tasshack protocol with null token trick."""
+        """Sync worker for connect(). Uses DreameHome cloud protocol for commands, hybrid for map."""
         try:
             _bootstrap_protocol(self._ref_path)
         except Exception as e:
             logger.error("Bootstrap failed: %s", e)
             return False
 
-        # Tasshack: local control requires (ip, token) with null token; prefer_cloud=False so
-        # status/control use UDP miio, not Xiaomi cloud web RPC (unreliable for DreameHome).
-        self._protocol = _protocol_cls(
-            ip=self._ip,
-            token=self._token,
-            username=self._username,
-            password=self._password,
-            country=self._country,
-            auth_key=self._auth_key,
-            device_id=str(self._did) if self._did else None,
-            prefer_cloud=False,
-        )
-
-        if self._username and self._password and self._protocol.cloud:
-            ok = self._protocol.cloud.login()
+        # DreameHome cloud protocol for commands and status
+        if _cloud_cls is not None and self._username and self._password:
+            self._cloud = _cloud_cls(
+                username=self._username,
+                password=self._password,
+                country=self._country,
+                account_type="dreame",
+                auth_key=self._auth_key,
+                did=str(self._did) if self._did else None,
+            )
+            ok = self._cloud.login()
             if ok:
-                logger.info("Cloud login OK (maps / DID sync)")
-                if self._did:
-                    # Keep cloud session aligned with explicit DREAME_DID (do not trust stale localip).
-                    self._protocol.cloud._did = str(self._did)
-                else:
-                    devices = self._protocol.cloud.get_devices()
-                    if isinstance(devices, list) and devices:
-                        target = _pick_cloud_device(devices, self._ip)
-                        if target:
+                logger.info("DreameHome cloud login OK (commands)")
+                if not self._did:
+                    devices = self._cloud.get_devices()
+                    if devices:
+                        records = devices.get("page", {}).get("records", [])
+                        if records:
+                            target = records[0]
+                            if self._ip:
+                                m = next((d for d in records if d.get("localip") == self._ip), None)
+                                if m:
+                                    target = m
                             self._did = str(target.get("did", ""))
-                            self._protocol.cloud._did = self._did
                             logger.info("Auto-discovered DID=%s (name=%s)", self._did, target.get("name", "?"))
+                if not self._did:
+                    logger.error("No DID available — cannot send commands")
+                    return False
             else:
-                c = self._protocol.cloud
-                why = "check DREAME_USER, DREAME_PASSWORD, DREAME_COUNTRY or account captcha/2FA"
-                if getattr(c, "auth_failed", False):
-                    why = "auth rejected (wrong password or expired session)"
-                logger.warning("Cloud login failed; local-only (%s). For maps, fix cloud or set DREAME_DID.", why)
-
-        self._apply_local_miot_tuning()
-
-        if not self._protocol.connected and not self._ip:
-            logger.error("No local IP and cloud not connected")
+                logger.error("DreameHome cloud login failed")
+                return False
+        else:
+            logger.error("No cloud credentials — DreameHome cloud protocol unavailable")
             return False
 
-        if _map_manager_cls is not None:
-            try:
-                self._map_manager = _map_manager_cls(self._protocol)
-                logger.info("Map manager initialized")
-            except Exception as e:
-                logger.warning("Map manager init failed: %s", e)
+        # Hybrid protocol (best-effort, for map functionality)
+        try:
+            self._protocol = _protocol_cls(
+                ip=self._ip,
+                token=self._token,
+                username=self._username,
+                password=self._password,
+                country=self._country,
+                auth_key=self._auth_key,
+                device_id=str(self._did) if self._did else None,
+                prefer_cloud=False,
+            )
+            self._apply_local_miot_tuning()
 
-        if _map_renderer_cls is not None and self._map_renderer is None:
-            try:
+            if _map_manager_cls is not None:
                 try:
-                    self._map_renderer = _map_renderer_cls(low_resolution=True, cache=True)
-                except TypeError:
-                    # Older / alternate Tasshack ref signatures (no low_resolution, etc.)
-                    self._map_renderer = _map_renderer_cls()
-            except Exception as e:
-                logger.warning("DreameVacuumMapRenderer init failed: %s", e)
+                    self._map_manager = _map_manager_cls(self._protocol)
+                    logger.info("Map manager initialized")
+                except Exception as e:
+                    logger.warning("Map manager init failed: %s", e)
 
-        logger.info("Connected [ip=%s null_token=%s did=%s]", self._ip, self._token == "0" * 32, self._did)
+            if _map_renderer_cls is not None and self._map_renderer is None:
+                try:
+                    try:
+                        self._map_renderer = _map_renderer_cls(low_resolution=True, cache=True)
+                    except TypeError:
+                        self._map_renderer = _map_renderer_cls()
+                except Exception as e:
+                    logger.warning("DreameVacuumMapRenderer init failed: %s", e)
+        except Exception as e:
+            logger.warning("Hybrid protocol init failed (map will be unavailable): %s", e)
+            self._protocol = None
+
+        logger.info("Connected [did=%s] via DreameHome cloud", self._did)
         return True
 
     def disconnect(self) -> None:
-        """Tear down protocol; executor is kept for process lifetime (server exit)."""
+        """Tear down all protocols; executor is kept for process lifetime (server exit)."""
         if self._protocol is not None:
             try:
                 self._protocol.disconnect()
             except Exception as e:
                 logger.warning("protocol.disconnect failed: %s", e)
+        if self._cloud is not None:
+            try:
+                self._cloud._session.close()
+            except Exception:
+                pass
         self._protocol = None
+        self._cloud = None
         self._map_manager = None
         self._map_renderer = None
 
@@ -464,30 +490,33 @@ class DreameHomeClient:
 
     def local_miot_ready(self) -> bool:
         """True only after a successful local UDP miio discover (unrelated to DREAME_IP in env)."""
-        dev = getattr(self._protocol, "device", None) if self._protocol else None
+        proto = self._protocol
+        if proto is None:
+            return False
+        dev = getattr(proto, "device", None)
         return bool(dev) and bool(getattr(dev, "connected", False))
 
     def _get_status_sync(self) -> DreameStatus:
-        if not self._protocol:
+        cloud = self._cloud
+        if cloud is None or not cloud.logged_in:
             return DreameStatus(error="Not connected")
+        if not self._did:
+            return DreameStatus(error="No DID available")
         try:
-            dids = _miot_did_slots(8, str(self._did) if self._did else None)
-            bases = [
-                _PROP_STATE,
-                _PROP_ERROR,
-                _PROP_BATTERY,
-                _PROP_CHARGING,
-                _PROP_STATUS,
-                _PROP_TIME,
-                _PROP_AREA,
-                _PROP_FANSPEED,
+            did = str(self._did)
+            props = [
+                {**_PROP_STATE, "did": did},
+                {**_PROP_ERROR, "did": did},
+                {**_PROP_BATTERY, "did": did},
+                {**_PROP_CHARGING, "did": did},
+                {**_PROP_STATUS, "did": did},
+                {**_PROP_TIME, "did": did},
+                {**_PROP_AREA, "did": did},
+                {**_PROP_FANSPEED, "did": did},
             ]
-            props = [{**b, "did": d} for b, d in zip(bases, dids, strict=True)]
-            result = self._safe_call("get_properties", props)
+            result = cloud.send("get_properties", props)
             if result is None:
-                return DreameStatus(
-                    error=self._last_protocol_error or "No response from device",
-                )
+                return DreameStatus(error="No response from device")
 
             raw = {f"{r['siid']}.{r['piid']}": r.get("value") for r in result if "value" in r}
 
@@ -517,22 +546,23 @@ class DreameHomeClient:
             return DreameStatus(error=str(e))
 
     def _control_sync(self, cmd: str) -> dict:
-        if not self._protocol:
+        cloud = self._cloud
+        if cloud is None or not cloud.logged_in:
             return {"success": False, "error": "Not connected"}
+        if not self._did:
+            return {"success": False, "error": "No DID available"}
 
         if cmd not in _ACTION_MAP:
             return {"success": False, "error": f"Unknown command: {cmd}"}
-        # Tasshack DreameVacuumProtocol.action() encodes `did` as f"{siid}.{aiid}" in the
-        # miio/miot request — it must not use the cloud numeric device id here.
         try:
             siid, aiid = _ACTION_MAP[cmd]
-            result = self._safe_call("action", siid, aiid, [])
+            result = cloud.send(
+                "action",
+                {"did": str(self._did), "siid": siid, "aiid": aiid, "in": []},
+            )
             if result is not None:
                 return {"success": True, "message": f"Sent {cmd}", "result": result}
-            return {
-                "success": False,
-                "error": self._last_protocol_error or f"No response for {cmd}",
-            }
+            return {"success": False, "error": f"No response for {cmd}"}
         except Exception as e:
             logger.exception("control(%s) failed", cmd)
             return {"success": False, "error": str(e)}

@@ -48,7 +48,7 @@ export default function Settings() {
           <strong className="text-slate-300">DREAME_REF_PATH</strong> — Path to
           Tasshack ref clone (default{" "}
           <code className="text-amber-400/90">
-            D:/Dev/repos/tasshack_dreame_vacuum_ref
+            D:/Dev/repos/external/tasshack_dreame_vacuum_ref
           </code>
           )
         </p>

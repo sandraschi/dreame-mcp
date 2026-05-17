@@ -102,7 +102,7 @@ export default function Help() {
               <li>
                 Ensure the Tasshack ref clone exists:
                 <div className="mt-1 ml-5 font-mono text-xs text-slate-400 bg-black/30 rounded px-3 py-2">
-                  D:\Dev\repos\tasshack_dreame_vacuum_ref\
+                  D:\Dev\repos/external/tasshack_dreame_vacuum_ref\
                 </div>
               </li>
               <li>
@@ -252,7 +252,7 @@ export default function Help() {
                   ["Frontend port", "10895 (Vite React)"],
                   ["Cloud", "DreameHome EU (Alibaba Cloud)"],
                   ["Protocol", "HTTPS REST + MQTT push"],
-                  ["Ref clone", "D:\\Dev\\repos\\tasshack_dreame_vacuum_ref"],
+                  ["Ref clone", "D:\\Dev\\repos\\external\\tasshack_dreame_vacuum_ref"],
                 ].map(([k, v]) => (
                   <div key={k} className="flex flex-col gap-0.5">
                     <span className="text-[10px] uppercase tracking-widest text-slate-600">
@@ -485,7 +485,7 @@ export default function Help() {
                 </p>
                 <p className="text-slate-500 text-xs leading-relaxed">
                   This repo loads modules from{" "}
-                  <Code>D:\Dev\repos\tasshack_dreame_vacuum_ref</Code> at
+                  <Code>D:\Dev\repos/external/tasshack_dreame_vacuum_ref</Code> at
                   runtime (not vendored source). We bootstrap their protocol
                   classes, then wrap them behind FastMCP tools + REST endpoints.
                 </p>

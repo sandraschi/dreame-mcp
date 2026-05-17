@@ -139,7 +139,7 @@ This server uses the DreameHome cloud API — no local token required.
    DREAME_PASSWORD=yourpassword
    DREAME_COUNTRY=eu
 
-   DREAME_REF_PATH=D:/Dev/repos/tasshack_dreame_vacuum_ref
+   DREAME_REF_PATH=D:/Dev/repos/external/tasshack_dreame_vacuum_ref
 
 2. Start server: uv run python -m dreame_mcp --mode dual --port 10794
 3. Open dashboard: http://localhost:10795
