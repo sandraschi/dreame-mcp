@@ -42,3 +42,5 @@ D:/Dev/repos/temp/dreame_*
 # tasshack_dreame_vacuum_ref/ is a sibling repo, not part of this one
 # Rust / Zed IDE — rust-analyzer may create target/ at repo root
 target/
+
+_dashboard/
