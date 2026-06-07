@@ -1,10 +1,10 @@
-set windows-shell := ["pwsh.exe", "-NoLogo", "-Command"]
+﻿set windows-shell := ["pwsh.exe", "-NoLogo", "-Command"]
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
 # Open the interactive recipe dashboard in the browser
 default:
-    @pwsh.exe -NoProfile -ExecutionPolicy Bypass -File ../mcp-central-docs/scripts/just-dashboard.ps1 -Path .
+    @just --list
 
 # ── Quality ───────────────────────────────────────────────────────────────────
 
@@ -31,6 +31,12 @@ audit-deps:
     Set-Location '{{justfile_directory()}}'
     uv run safety check
 
+# ── Testing ───────────────────────────────────────────────────────────────────
+
+# Run e2e Playwright tests
+e2e:
+    pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File "D:\Dev\repos\mcp-central-docs\scripts\playwright-audit.ps1" -RepoPath "{{justfile_directory()}}"
+
 # ── Operations ────────────────────────────────────────────────────────────────
 
 # Extract DID and miIO Tokens from DreameHome Cloud
@@ -44,3 +50,4 @@ start-hybrid:
 # Perform a raw UDP discovery probe to check vacuum responsiveness
 check-discovery:
     uv run python -m miio discover
+
