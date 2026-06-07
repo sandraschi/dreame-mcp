@@ -19,6 +19,8 @@ $FleetStart = Initialize-FleetStartMode @PSBoundParameters
 Enter-FleetHeadlessConsole -Headless:$Headless -BackendOnly:$BackendOnly
 Stop-FleetPortSquatters -Ports @($BackendPort, $FrontendPort) -Label "dreame-mcp"
 
+if (-not (Assert-FleetPortsAvailable -Ports @($BackendPort, $FrontendPort) -Label "dreame-mcp")) { exit 1 }
+
 foreach ($envPath in @((Join-Path $ProjectRoot ".env"), (Join-Path $WebappDir ".env"))) {
     if (-not (Test-Path $envPath)) { continue }
     Get-Content $envPath | ForEach-Object {
@@ -67,4 +69,5 @@ if (-not $NoBrowser) {
 
 Write-Host "[dreame-mcp] Starting Vite on $FrontendPort ..." -ForegroundColor Green
 npm run dev -- --host 127.0.0.1 --port $FrontendPort --strictPort
+
 
