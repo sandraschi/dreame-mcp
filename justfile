@@ -1,4 +1,5 @@
-﻿set windows-shell := ["pwsh.exe", "-NoLogo", "-Command"]
+set windows-shell := ["pwsh.exe", "-NoLogo", "-Command"]
+import 'scripts/just/fleet.just'
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
@@ -50,4 +51,3 @@ start-hybrid:
 # Perform a raw UDP discovery probe to check vacuum responsiveness
 check-discovery:
     uv run python -m miio discover
-

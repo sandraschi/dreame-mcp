@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import type React from "react";
 import { useState } from "react";
 import Sidebar from "./Sidebar";
+import FloatingChat from "../FloatingChat";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -28,6 +29,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </AnimatePresence>
         </div>
       </main>
+      <FloatingChat />
     </div>
   );
 }

@@ -1,8 +1,8 @@
-﻿param(
+param(
     [switch]$Headless,
     [switch]$BackendOnly,
-    [switch]$NoBrowser
-)
+    [switch]$NoBrowser,
+    [switch]$ReuseIfRunning)
 
 $BackendPort = 10894
 $FrontendPort = 10895
@@ -17,9 +17,21 @@ if (-not (Test-Path -LiteralPath $FleetStartPath)) {
 . $FleetStartPath
 $FleetStart = Initialize-FleetStartMode @PSBoundParameters
 Enter-FleetHeadlessConsole -Headless:$Headless -BackendOnly:$BackendOnly
-Stop-FleetPortSquatters -Ports @($BackendPort, $FrontendPort) -Label "dreame-mcp"
 
-if (-not (Assert-FleetPortsAvailable -Ports @($BackendPort, $FrontendPort) -Label "dreame-mcp")) { exit 1 }
+$portResolve = @{
+    Ports      = @($BackendPort, $FrontendPort)
+    Label      = "dreame-mcp"
+    AllowReuse = $ReuseIfRunning
+}
+if ($ReuseIfRunning) {
+    $portResolve.HealthChecks = @{
+        $BackendPort = "http://127.0.0.1:$BackendPort/api/v1/health"
+        $FrontendPort = "http://127.0.0.1:$FrontendPort/"
+    }
+}
+$portState = Resolve-FleetPortConflict @portResolve
+if ($portState.Action -eq 'Blocked') { exit 1 }
+if ($portState.Reuse) { return }
 
 foreach ($envPath in @((Join-Path $ProjectRoot ".env"), (Join-Path $WebappDir ".env"))) {
     if (-not (Test-Path $envPath)) { continue }

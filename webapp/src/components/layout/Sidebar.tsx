@@ -6,6 +6,7 @@ import {
   ChevronRight,
   HelpCircle,
   LayoutDashboard,
+  List,
   PlayCircle,
   ScanLine,
   Settings,
@@ -19,6 +20,7 @@ const navItems = [
   { path: "/status", label: "Status", icon: Activity },
   { path: "/controls", label: "Controls", icon: PlayCircle },
   { path: "/tools", label: "MCP Tools", icon: Wrench },
+  { path: "/logs", label: "Logs", icon: List },
   { path: "/settings", label: "Settings", icon: Settings },
   { path: "/help", label: "Help", icon: HelpCircle },
 ];

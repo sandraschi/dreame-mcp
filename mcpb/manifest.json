@@ -1,0 +1,22 @@
+{
+  "manifest_version": "0.2",
+  "name": "dreame-mcp",
+  "version": "0.2.0",
+  "description": "FastMCP 3.2.0 MCP server and webapp for Dreame robot vacuums via DreameHome cloud",
+  "author": { "name": "sandraschi" },
+  "server": {
+    "type": "python",
+    "entry_point": "src/dreame_mcp/__main__.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run","--directory","${PWD}","python","-m","dreame_mcp"],
+      "env": {
+        "PYTHONPATH": "${PWD}/src",
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  },
+  "tools": [
+    { "name": "dreame_tool", "description": "dreame_tool" }
+  ]
+}

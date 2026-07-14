@@ -4,6 +4,7 @@ import AppLayout from "./components/layout/AppLayout";
 import Controls from "./pages/Controls";
 import Dashboard from "./pages/Dashboard";
 import Help from "./pages/Help";
+import Logs from "./pages/Logs";
 import MapPage from "./pages/Map";
 import Settings from "./pages/Settings";
 import Status from "./pages/Status";
@@ -21,6 +22,7 @@ export default function App() {
           <Route path="/controls" element={<Controls />} />
           <Route path="/tools" element={<Tools />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/logs" element={<Logs />} />
           <Route path="/help" element={<Help />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

@@ -6,11 +6,12 @@ export default defineConfig({
   plugins: [react()],
   resolve: { alias: { "@": path.resolve(__dirname, "./src") } },
   server: {
+    allowedHosts: ['goliath'],
     port: 10895,
     strictPort: true,
-    host: true,
+    host: "127.0.0.1",
     proxy: {
-      "/api": { target: "http://localhost:10794", changeOrigin: true },
+      "/api": { target: "http://127.0.0.1:10894", changeOrigin: true },
     },
   },
 });

@@ -2,16 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
-permissions:
-  contents: read
+    tags: ["v*"]
+  workflow_dispatch:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -21,7 +17,7 @@ jobs:
       - run: uv run ruff check src tests
 
   lint-webapp:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,7 +31,7 @@ jobs:
         working-directory: webapp
 
   test-mocked:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     needs: [lint, lint-webapp]
     steps:
       - uses: actions/checkout@v4
