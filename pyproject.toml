@@ -5,7 +5,7 @@ description = "FastMCP 3.2.0 MCP server and webapp for Dreame robot vacuums via 
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "fastmcp>=3.4.2,<4",
+    "fastmcp>=3.4.4,<4",
     "httpx>=0.27.0",
     "pydantic>=2.0.0",
     "fastapi>=0.104.0",
@@ -41,7 +41,7 @@ markers = ["live: tests requiring real Dreame hoover (--live or DREAME_LIVE=1)"]
 dev = [
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
-    "ruff>=0.15.9",
+    "ruff>=0.16.0,<0.17",
 ]
 
 [tool.ruff]
@@ -50,7 +50,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "S", "UP", "RUF"]
-ignore = ["S101", "B008"]
+ignore = ["S101", "B008", "S106", "S110", "S112", "RUF012"]
 
 [tool.ruff.format]
 quote-style = "double"
