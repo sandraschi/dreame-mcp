@@ -1,4 +1,4 @@
-﻿"""DreameHome cloud client wrapping Tasshack dreame-vacuum protocol + map layers.
+"""DreameHome cloud client wrapping Tasshack dreame-vacuum protocol + map layers.
 
 Loads protocol.py and map.py from the ref clone at DREAME_REF_PATH (or auto-detected
 sibling directory tasshack_dreame_vacuum_ref). Stubs out miio/HA imports so the
@@ -65,6 +65,7 @@ def _stub_miio():
 
     try:
         import miio.miioprotocol  # noqa: F401 — verify miio is actually importable
+
         return
     except (ImportError, AttributeError):
         pass
@@ -157,9 +158,8 @@ def _bootstrap_protocol(ref_path: Path):
         _load_module(f"{_DREAME_PKG}.resources", dreame_dir / "resources.py")
         map_mod = _load_module(f"{_DREAME_PKG}.map", dreame_dir / "map.py")
         # NOTE: upstream class name is DreameMapVacuumMapManager (not DreameVacuumMapManager).
-        _map_manager_cls = (
-            getattr(map_mod, "DreameMapVacuumMapManager", None)
-            or getattr(map_mod, "DreameVacuumMapManager", None)
+        _map_manager_cls = getattr(map_mod, "DreameMapVacuumMapManager", None) or getattr(
+            map_mod, "DreameVacuumMapManager", None
         )
         _map_decoder_cls = getattr(map_mod, "DreameVacuumMapDecoder", None)
         _map_renderer_cls = getattr(map_mod, "DreameVacuumMapRenderer", None)
@@ -705,9 +705,7 @@ class DreameHomeClient:
                             "Map fetch: %d bytes via signed-URL + get_file",
                             len(raw),
                         )
-                        attempted.append(
-                            {"step": "get_interim_file_url+get_file", "object_name": on_display or ""}
-                        )
+                        attempted.append({"step": "get_interim_file_url+get_file", "object_name": on_display or ""})
                     else:
                         raw = None
                     if not raw and on_display:
@@ -739,11 +737,7 @@ class DreameHomeClient:
                     except Exception as e:
                         logger.warning("Property-based map fetch failed: %s", e)
 
-                if (
-                    not raw
-                    and on_display
-                    and not str(on_display).startswith("property_")
-                ):
+                if not raw and on_display and not str(on_display).startswith("property_"):
                     o = str(on_display).strip()
                     if o:
                         obj_for_url = o if o.startswith("/") else f"/{o}"

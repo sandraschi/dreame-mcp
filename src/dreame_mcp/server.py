@@ -65,9 +65,13 @@ app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:10894", "http://127.0.0.1:10894",
-        "http://localhost:10895", "http://127.0.0.1:10895",
-        "http://tauri.localhost", "https://tauri.localhost", "tauri://localhost",
+        "http://localhost:10894",
+        "http://127.0.0.1:10894",
+        "http://localhost:10895",
+        "http://127.0.0.1:10895",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+        "tauri://localhost",
     ],
     allow_origin_regex=r"https?://(?:[a-zA-Z0-9-]+\.ts\.net|.*?\.tail-[a-f0-9]+\.ts\.net|tauri\.localhost|localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|100\.\d{1,3}\.\d{1,3}\.\d{1,3})(?::\d+)?$|^tauri://localhost$",
     allow_credentials=True,
@@ -77,6 +81,7 @@ app.add_middleware(
 
 mcp_log = ActivityLog()
 app.include_router(create_log_router(mcp_log), prefix="/api")
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
