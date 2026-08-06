@@ -1,0 +1,9 @@
+{
+  "auto_load": ["session-context"],
+  "skills": {
+    "session-context": {
+      "name": "session-context",
+      "description": "Dreame robot vacuum session start prompt"
+    }
+  }
+}

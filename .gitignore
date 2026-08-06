@@ -16,7 +16,6 @@ reports/
 # Node / webapp
 webapp/node_modules/
 webapp/dist/
-webapp/package-lock.json
 mcpb/src/
 
 # Tauri / native build artifacts

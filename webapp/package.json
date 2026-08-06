@@ -11,7 +11,8 @@
     "fix": "biome check --write .",
     "format": "biome format --write .",
     "biome:ci": "biome ci .",
-    "biome": "biome check --write ."
+    "biome": "biome check --write .",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.2.0",
@@ -21,10 +22,12 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.13.1",
-    "tailwind-merge": "^2.5.4"
+    "tailwind-merge": "^2.5.4",
+    "zustand": "^5.0.2"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.11",
+    "@playwright/test": "^1.49.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.3",
