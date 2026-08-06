@@ -48,11 +48,21 @@ CONNECT_TIMEOUT = 30  # login + MQTT setup
 # Tasshack ref clone bootstrap
 # ---------------------------------------------------------------------------
 
-_REF_DEFAULT = Path("D:/Dev/repos/external/tasshack_dreame_vacuum_ref")
+# Candidate paths for the Tasshack ref clone. The canonical location is
+# external/tasshack_dreame_vacuum_ref (v2.0.0b22, has the DreameHome-native
+# cloud class); upstream v1.x clones (dreame-vacuum) renamed that class and
+# only ship the legacy Xiaomi auth flow, which rejects DreameHome accounts.
+_REF_CANDIDATES = [
+    Path("D:/Dev/repos/external/tasshack_dreame_vacuum_ref"),
+    Path("D:/Dev/repos/external/dreame-vacuum"),
+    Path("D:/Dev/repos/tasshack_dreame_vacuum_ref"),
+    Path(__file__).resolve().parent.parent.parent / "tasshack_dreame_vacuum_ref",
+]
+_REF_DEFAULT = _REF_CANDIDATES[0]
 _DREAME_PKG = "custom_components.dreame_vacuum.dreame"
 
 _protocol_cls = None  # DreameVacuumProtocol (Local + Cloud)
-_cloud_cls = None  # DreameVacuumDreameHomeCloudProtocol (cloud-only, for commands)
+_cloud_cls = None  # DreameVacuumDreameHomeCloudProtocol (Dreame-native cloud)
 _map_manager_cls = None  # DreameMapVacuumMapManager (optional, heavy)
 _map_decoder_cls = None  # DreameVacuumMapDecoder (static decode_map on map.py)
 _map_renderer_cls = None  # DreameVacuumMapRenderer (render_map → bytes)
@@ -113,13 +123,48 @@ def _load_module(name: str, path: Path):
     return mod
 
 
-def _bootstrap_protocol(ref_path: Path):
+def _ref_has_dreamehome(ref: Path) -> bool:
+    """True when this ref clone ships the Dreame-native cloud class (works with DreameHome accounts)."""
+    proto = ref / "custom_components" / "dreame_vacuum" / "dreame" / "protocol.py"
+    if not proto.is_file():
+        return False
+    try:
+        return "DreameVacuumDreameHomeCloudProtocol" in proto.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+
+
+def _resolve_ref_dir(ref_path: Path | None) -> Path:
+    """Find a usable Tasshack ref clone.
+
+    Prefers a ref that ships the Dreame-native cloud class (v2 refs) — the
+    legacy Xiaomi auth in upstream v1 refs rejects DreameHome accounts.
+    """
+    candidates: list[Path] = []
+    if ref_path is not None:
+        candidates.append(ref_path)
+    candidates.extend(_REF_CANDIDATES)
+
+    valid = [c for c in candidates if (c / "custom_components" / "dreame_vacuum" / "dreame").is_dir()]
+    for c in valid:
+        if _ref_has_dreamehome(c):
+            return c
+    if valid:
+        return valid[0]
+    raise RuntimeError(
+        "No Tasshack ref clone found. Set DREAME_REF_PATH to a clone of "
+        "Tasshack/dreame-vacuum (e.g. D:/Dev/repos/external/tasshack_dreame_vacuum_ref)."
+    )
+
+
+def _bootstrap_protocol(ref_path: Path | None = None):
     """Load unified protocol + map from the external reference repo. Idempotent."""
     global _protocol_cls, _cloud_cls, _map_manager_cls, _map_decoder_cls, _map_renderer_cls
 
     if _protocol_cls is not None:
         return
 
+    ref_path = _resolve_ref_dir(ref_path)
     cc_dir = ref_path / "custom_components"
     dv_dir = cc_dir / "dreame_vacuum"
     dreame_dir = dv_dir / "dreame"
@@ -153,7 +198,10 @@ def _bootstrap_protocol(ref_path: Path):
     # Load protocol (unified local/cloud)
     proto_mod = _load_module(f"{_DREAME_PKG}.protocol", dreame_dir / "protocol.py")
     _protocol_cls = proto_mod.DreameVacuumProtocol
-    _cloud_cls = getattr(proto_mod, "DreameVacuumDreameHomeCloudProtocol", None)
+    # Dreame-native cloud (v2 refs) is preferred; upstream v1 refs renamed it.
+    _cloud_cls = getattr(proto_mod, "DreameVacuumDreameHomeCloudProtocol", None) or getattr(
+        proto_mod, "DreameVacuumCloudProtocol", None
+    )
 
     # Load map
     try:
@@ -281,6 +329,35 @@ def _miot_did_slots(n: int, cloud_did: str | None) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _classify_cloud_failure(cloud) -> str:
+    """Turn a failed DreameHome cloud login into an actionable reason.
+
+    Xiaomi auth error codes: 70016 = wrong username/password, 70002 = user not
+    registered, 87001 = rate-limited, 20013 = 2FA pending. The ref clone keeps
+    state on the cloud object (verification_url / captcha_img / _auth_failed).
+    """
+    if cloud is None:
+        return "no cloud protocol available"
+    verification = getattr(cloud, "verification_url", None)
+    captcha = getattr(cloud, "captcha_img", None)
+    if verification:
+        return "cloud login blocked: 2FA/verification required (check DreameHome app)"
+    if captcha:
+        return "cloud login blocked: captcha required (Xiaomi rate-limit)"
+    code = getattr(cloud, "last_code", None) or getattr(cloud, "_last_code", None)
+    if code in ("70016", 70016):
+        return (
+            "cloud login failed: Xiaomi rejected the credentials (70016 = wrong "
+            "username/password). Update DREAME_USER/DREAME_PASSWORD in .env — "
+            "verify the current DreameHome password, or reset it via the app."
+        )
+    if code in ("70002", 70002):
+        return "cloud login failed: Xiaomi says the account does not exist (70002)"
+    if code:
+        return f"cloud login failed: Xiaomi error code {code}"
+    return "cloud login failed: unknown Xiaomi auth error (check DREAME_USER/DREAME_PASSWORD/DREAME_COUNTRY)"
+
+
 class DreameHomeClient:
     """Async-friendly wrapper around DreameVacuumProtocol (Hybrid Local/Cloud)."""
 
@@ -305,6 +382,7 @@ class DreameHomeClient:
         self._ref_path = ref_path or _REF_DEFAULT
         self._protocol = None
         self._cloud = None
+        self._dreame_cloud = None
         self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="dreame")
         self._map_manager = None
         self._map_renderer = None
@@ -312,6 +390,12 @@ class DreameHomeClient:
         self._map_fetch_lock = threading.Lock()
         # Last exception from a failed protocol call (e.g. miio discover) for clearer API errors.
         self._last_protocol_error: str | None = None
+        # Reason for a failed DreameHome cloud login (surfaced via /api/v1/health).
+        self._cloud_error: str | None = None
+
+    @property
+    def cloud_error(self) -> str | None:
+        return self._cloud_error
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -361,7 +445,9 @@ class DreameHomeClient:
 
     @property
     def connected(self) -> bool:
-        """True if protocol is initialized (local IP set or cloud connected)."""
+        """True if local protocol is live OR the Dreame-native cloud is logged in."""
+        if self._dreame_cloud is not None and getattr(self._dreame_cloud, "_logged_in", False):
+            return True
         if not self._protocol:
             return False
         try:
@@ -371,7 +457,11 @@ class DreameHomeClient:
 
     @property
     def auth_key(self) -> str | None:
-        """Retrieve cloud auth_key from protocol if available."""
+        """Retrieve cloud auth_key from the Dreame-native cloud or protocol."""
+        if self._dreame_cloud is not None:
+            key = getattr(self._dreame_cloud, "auth_key", None)
+            if key:
+                return key
         if not self._protocol:
             return None
         key = getattr(self._protocol, "auth_key", None)
@@ -383,7 +473,7 @@ class DreameHomeClient:
         return None
 
     def _connect_sync(self) -> bool:
-        """Sync worker for connect(). Bootstraps Tasshack protocol with null token trick."""
+        """Sync worker for connect(). Bootstraps Tasshack protocol + Dreame-native cloud."""
         try:
             _bootstrap_protocol(self._ref_path)
         except Exception as e:
@@ -407,29 +497,82 @@ class DreameHomeClient:
             prefer_cloud=False,
         )
 
-        if self._username and self._password and self._protocol.cloud:
-            ok = self._protocol.cloud.login()
+        # Dreame-native cloud client (api.dreame.tech). This is the reliable
+        # control path: legacy Xiaomi auth (account.xiaomi.com) rejects
+        # DreameHome accounts with 70016, and the null-token UDP trick no
+        # longer works on current firmware.
+        self._dreame_cloud = None
+        if _cloud_cls is not None and self._username and self._password:
+            try:
+                self._dreame_cloud = _cloud_cls(
+                    self._username,
+                    self._password,
+                    account_type="dreame",
+                    country=self._country,
+                    auth_key=self._auth_key,
+                    did=str(self._did) if self._did else None,
+                )
+            except TypeError:
+                # Upstream v1 refs use (username, password, country, auth_key, device_id)
+                self._dreame_cloud = _cloud_cls(
+                    self._username,
+                    self._password,
+                    country=self._country,
+                    auth_key=self._auth_key,
+                    device_id=str(self._did) if self._did else None,
+                )
+
+        cloud = self._dreame_cloud or (getattr(self._protocol, "cloud", None) if self._username else None)
+        if cloud is not None:
+            ok = cloud.login()
             if ok:
-                logger.info("Cloud login OK (maps only)")
-                if not self._did:
-                    devices = self._protocol.cloud.get_devices()
-                    if isinstance(devices, list) and devices:
-                        target = None
-                        if self._ip:
-                            target = next((d for d in devices if d.get("localip") == self._ip), None)
-                        if not target:
-                            target = devices[0]
-                        if target:
-                            self._did = str(target.get("did", ""))
-                            self._protocol.cloud._did = self._did
-                            logger.info("Auto-discovered DID=%s", self._did)
+                logger.info("Cloud login OK (%s)", type(cloud).__name__)
+                self._cloud_error = None
+                # Resolve DID + command routing host from the device list. The
+                # bindDomain (e.g. "10000.mt.eu.iot.dreame.tech:19973") routes
+                # sendCommand to the device's region gateway — without it the
+                # API answers 404.
+                try:
+                    devices = cloud.get_devices()
+                except Exception:
+                    devices = None
+                records: list = []
+                if isinstance(devices, dict):
+                    records = devices.get("page", {}).get("records", []) or []
+                elif isinstance(devices, list):
+                    records = devices
+                if records:
+                    target = None
+                    if self._ip:
+                        target = next((d for d in records if d.get("localip") == self._ip), None)
+                    if not target:
+                        target = next((d for d in records if str(d.get("did", "")) == str(self._did)), None)
+                    if not target:
+                        target = records[0]
+                    if target:
+                        self._did = str(target.get("did", "")) or self._did
+                        bind = target.get("bindDomain")
+                        if bind and hasattr(cloud, "_host"):
+                            cloud._host = bind
+                            logger.info("Cloud command host: %s (did=%s)", bind, self._did)
+                        elif self._did:
+                            logger.info("DID=%s (no bindDomain in device record)", self._did)
+                    # Populate _model/_uid/_host on the cloud client so the map
+                    # file API (get_interim_file_url) can sign URLs.
+                    try:
+                        cloud.get_device_info()
+                    except Exception as e:
+                        logger.debug("cloud get_device_info failed: %s", e)
             else:
-                logger.warning("Cloud login failed — local-only mode")
+                self._cloud_error = _classify_cloud_failure(cloud)
+                logger.warning("Cloud login failed: %s", self._cloud_error)
 
         self._apply_local_miot_tuning()
 
-        if not self._protocol.connected and not self._ip:
-            logger.error("No local IP and cloud not connected")
+        cloud_ok = self._dreame_cloud is not None and getattr(self._dreame_cloud, "_logged_in", False)
+        local_ok = bool(getattr(self._protocol, "connected", False))
+        if not local_ok and not cloud_ok:
+            logger.error("No local connection and cloud login failed")
             return False
 
         if _map_manager_cls is not None:
@@ -448,7 +591,13 @@ class DreameHomeClient:
             except Exception as e:
                 logger.warning("DreameVacuumMapRenderer init failed: %s", e)
 
-        logger.info("Connected [ip=%s null_token=%s did=%s]", self._ip, self._token == "0" * 32, self._did)
+        logger.info(
+            "Connected [ip=%s null_token=%s did=%s cloud=%s]",
+            self._ip,
+            self._token == "0" * 32,
+            self._did,
+            cloud_ok,
+        )
         return True
 
     def disconnect(self) -> None:
@@ -459,6 +608,7 @@ class DreameHomeClient:
             except Exception as e:
                 logger.warning("protocol.disconnect failed: %s", e)
         self._protocol = None
+        self._dreame_cloud = None
         self._map_manager = None
         self._map_renderer = None
 
@@ -551,7 +701,7 @@ class DreameHomeClient:
             return {"success": False, "error": str(e)}
 
     def _safe_call(self, method: str, *args, **kwargs) -> Any:
-        """Call protocol methods; for hybrid mode, also try ``protocol.cloud`` for file APIs."""
+        """Call protocol methods; fall back to the Dreame-native cloud when local fails."""
         if not self._protocol:
             return None
 
@@ -572,10 +722,34 @@ class DreameHomeClient:
         try:
             out = func(*args, **kwargs)
             self._last_protocol_error = None
-            return out
+            if out is not None:
+                return out
         except Exception as e:
             self._last_protocol_error = str(e)
             logger.error("Protocol call failed [%s]: %s", method, e)
+            return self._safe_call_cloud(method, *args, **kwargs)
+
+        # Local returned nothing — try the Dreame-native cloud (works even when
+        # the null-token UDP path is dead, e.g. firmware patched the bypass).
+        return self._safe_call_cloud(method, *args, **kwargs)
+
+    def _safe_call_cloud(self, method: str, *args, **kwargs) -> Any:
+        """Retry a protocol call through the Dreame-native cloud client."""
+        dc = self._dreame_cloud
+        if dc is None or not getattr(dc, "_logged_in", False):
+            return None
+        cfunc = getattr(dc, method, None)
+        if cfunc is None:
+            return None
+        try:
+            out = cfunc(*args, **kwargs)
+            if out is not None:
+                self._last_protocol_error = None
+                logger.info("Cloud fallback OK [%s]", method)
+            return out
+        except Exception as e:
+            self._last_protocol_error = str(e)
+            logger.error("Cloud fallback failed [%s]: %s", method, e)
             return None
 
     # ------------------------------------------------------------------
@@ -583,11 +757,19 @@ class DreameHomeClient:
     # ------------------------------------------------------------------
 
     def _resolve_live_map_object_name(self) -> str | None:
-        """HA map.py: prefer OBJECT_NAME from get_properties(6.3) over the model/uid/did/0 string alone."""
+        """HA map.py: prefer OBJECT_NAME from get_properties(6.3) over the model/uid/did/0 string alone.
+
+        Tries the Dreame-native cloud first (works without LAN), then the local
+        protocol (its cloud may be the legacy MiHome path).
+        """
+        candidates = []
+        if self._dreame_cloud is not None and getattr(self._dreame_cloud, "_logged_in", False):
+            candidates.append(self._dreame_cloud)
         proto = self._protocol
-        if proto is None:
-            return None
-        if getattr(proto, "dreame_cloud", True):
+        if proto is not None:
+            candidates.append(proto)
+
+        for endpoint in candidates:
             try:
                 from custom_components.dreame_vacuum.dreame.const import (  # type: ignore[import-not-found]
                     MAP_PARAMETER_VALUE,
@@ -597,7 +779,7 @@ class DreameHomeClient:
                     DreameVacuumProperty,
                 )
 
-                r = proto.get_properties(DIID(DreameVacuumProperty.OBJECT_NAME))
+                r = endpoint.get_properties(DIID(DreameVacuumProperty.OBJECT_NAME))
                 if r and len(r) > 0:
                     first = r[0]
                     val = first.get(MAP_PARAMETER_VALUE) or first.get("value")
@@ -612,22 +794,26 @@ class DreameHomeClient:
                                     return str(j[0])
                             return s
             except Exception as e:
-                logger.debug("get_properties(OBJECT_NAME): %s", e)
-        on = getattr(proto, "object_name", None)
-        if on:
-            return str(on).strip()
+                logger.debug("get_properties(OBJECT_NAME) via %s: %s", type(endpoint).__name__, e)
+
+        for endpoint in candidates:
+            on = getattr(endpoint, "object_name", None)
+            if on:
+                return str(on).strip()
         return None
 
     def _dreame_file_endpoints(self) -> list[Any]:
-        """DreameHome file helpers often live on ``protocol.cloud`` in hybrid mode."""
+        """DreameHome file helpers: Dreame-native cloud first, then protocol.cloud."""
+        out: list[Any] = []
+        if self._dreame_cloud is not None and getattr(self._dreame_cloud, "_logged_in", False):
+            out.append(self._dreame_cloud)
         p = self._protocol
         if p is None:
-            return []
+            return out
         c = getattr(p, "cloud", None)
-        out: list[Any] = []
-        if c is not None:
+        if c is not None and c not in out:
             out.append(c)
-        if c is not p:
+        if c is not p and p not in out:
             out.append(p)
         return out
 

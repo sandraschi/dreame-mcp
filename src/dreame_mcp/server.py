@@ -15,6 +15,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastmcp import FastMCP
+from fastmcp.server.server import ToolResult  # type: ignore[attr-defined]
 
 from .activity_log import ActivityLog, create_log_router
 from .agentic import dreame_agentic_workflow
@@ -170,6 +171,60 @@ async def dreame_shutdown() -> dict:
     return {"success": True, "message": "Dreame MCP shutting down"}
 
 
+@mcp.tool(app=True, annotations=_READ_ONLY)
+async def show_dreame_status_app() -> ToolResult:
+    """Show live Dreame robot status as a rich card.
+
+    ## Return Format
+    ToolResult with a Prefab card (status, battery, state, charging, fan speed)
+    plus a plain-text fallback.
+
+    ## Examples
+    show_dreame_status_app()
+    """
+    from prefab_ui import PrefabApp  # type: ignore[attr-defined]
+    from prefab_ui.components import Heading, Row  # type: ignore[attr-defined]
+
+    client = _state.get("client")
+    if client is None:
+        return ToolResult(
+            content="Robot not connected — set DREAME_USER/DREAME_PASSWORD in .env.",
+            structured_content=PrefabApp(  # type: ignore[call-arg]
+                title="Dreame Robot",
+                components=[Heading("Not connected"), Row(label="Status", value="stub mode")],  # type: ignore[call-arg]
+            ),
+        )
+    try:
+        st = await client.get_status()
+    except Exception as e:
+        return ToolResult(content=f"Status fetch failed: {e}")
+
+    if st.error:
+        return ToolResult(
+            content=f"Status unavailable: {st.error}",
+            structured_content=PrefabApp(  # type: ignore[call-arg]
+                title="Dreame Robot",
+                components=[Heading("Status unavailable"), Row(label="Error", value=st.error)],  # type: ignore[call-arg]
+            ),
+        )
+    rows = [
+        Row(label="State", value=str(st.state)),  # type: ignore[call-arg]
+        Row(label="Battery", value=f"{st.battery}%"),  # type: ignore[call-arg]
+        Row(label="Charging", value="YES" if st.is_charging else "NO"),  # type: ignore[call-arg]
+        Row(label="Cleaning", value="ACTIVE" if st.is_cleaning else "IDLE"),  # type: ignore[call-arg]
+        Row(label="Fan speed", value=str(st.fan_speed)),  # type: ignore[call-arg]
+    ]
+    content = (
+        f"## Dreame Robot Status\n- State: {st.state}\n- Battery: {st.battery}%\n"
+        f"- Charging: {'YES' if st.is_charging else 'NO'}\n"
+        f"- Cleaning: {'ACTIVE' if st.is_cleaning else 'IDLE'}\n- Fan speed: {st.fan_speed}"
+    )
+    return ToolResult(
+        content=content,
+        structured_content=PrefabApp(title="Dreame Robot", components=[Heading("Live status"), *rows]),  # type: ignore[call-arg]
+    )
+
+
 @mcp.prompt
 def dreame_quick_start() -> str:
     """Setup and connect instructions for Dreame D20 Pro Plus."""
@@ -210,6 +265,27 @@ def dreame_diagnostics() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+
+
+@mcp.resource("dreame://status")
+async def dreame_status_resource() -> str:
+    """Live Dreame robot status as Markdown (read via resource://)."""
+    client = _state.get("client")
+    if client is None:
+        return "**Robot:** not configured (stub mode)"
+    st = await client.get_status()
+    if st.error:
+        return f"**Status unavailable:** {st.error}"
+    return (
+        f"**State:** {st.state} | **Battery:** {st.battery}% | "
+        f"**Charging:** {'yes' if st.is_charging else 'no'} | "
+        f"**Cleaning:** {'active' if st.is_cleaning else 'idle'}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # REST API
 # ---------------------------------------------------------------------------
 
@@ -220,6 +296,7 @@ async def health():
     mode = "stub"
     if client:
         mode = "hybrid" if (client._ip and client._username) else ("local" if client._ip else "cloud")
+    control = _control_status(client)
     return {
         "status": "ok",
         "service": "dreame-mcp",
@@ -227,8 +304,34 @@ async def health():
         "local_miot": client.local_miot_ready() if client else False,
         "mode": mode,
         "did": client._did if client else None,
+        "control": control,
+        "cloud_error": getattr(client, "cloud_error", None) if client else None,
         "timestamp": datetime.now().isoformat(),
     }
+
+
+def _control_status(client) -> dict:
+    """Why control may be unavailable right now — one of the most-asked questions."""
+    if client is None:
+        return {"available": False, "reason": "no credentials configured (stub mode)"}
+    local_ok = client.local_miot_ready()
+    cloud_ok = bool(getattr(client, "cloud_error", None) is None and client._username)
+    if local_ok:
+        return {"available": True, "path": "local (UDP miio)"}
+    if cloud_ok and client.connected:
+        return {"available": True, "path": "cloud (DreameHome)"}
+    reasons = []
+    if not local_ok and client._ip:
+        reasons.append(
+            "local path down: robot did not answer UDP miio at "
+            f"{client._ip}:54321 — check the robot is powered on, on Wi-Fi, "
+            "and its IP (run `just check-discovery`)."
+        )
+    if client._username and getattr(client, "cloud_error", None):
+        reasons.append(str(client.cloud_error))
+    if not reasons:
+        reasons.append("no control path configured (set DREAME_IP or DREAME_USER/DREAME_PASSWORD)")
+    return {"available": False, "reason": " | ".join(reasons)}
 
 
 @app.get("/api/capabilities")
@@ -237,13 +340,20 @@ async def capabilities():
     return {
         "mcp_version": "3.2.0",
         "capabilities": {
-            "tools": ["dreame", "dreame_help", "dreame_agentic_workflow"],
+            "tools": [
+                "dreame_tool",
+                "dreame_help",
+                "dreame_agentic_workflow",
+                "dreame_shutdown",
+                "show_dreame_status_app",
+            ],
             "prompts": ["dreame_quick_start", "dreame_diagnostics"],
-            "resources": [],
+            "resources": ["dreame://status"],
             "features": {
                 "sampling": True,
                 "agentic_workflow": True,
                 "lidar_mapping": True,
+                "prefab_ui": True,
             },
         },
         "endpoints": {
@@ -411,12 +521,13 @@ async def api_diagnostics():
         "server": "dreame-mcp",
         "version": "0.2.0",
         "uptime_seconds": 0,
-        "tool_count": 4,
+        "tool_count": 5,
         "tools": [
             {"name": "dreame_tool"},
             {"name": "dreame_help"},
             {"name": "dreame_agentic_workflow"},
             {"name": "dreame_shutdown"},
+            {"name": "show_dreame_status_app"},
         ],
         "system": {
             "platform": platform.system(),

@@ -60,9 +60,9 @@ extract-tokens:
 start-hybrid:
     uv run python -m dreame_mcp --mode dual --port 10894
 
-# Perform a raw UDP discovery probe to check vacuum responsiveness
+# Perform a UDP discovery probe to find the robot's current LAN IP
 check-discovery:
-	uv run python -m miio discover
+	uv run python scripts/discover.py
 
 # --- Native Tauri ---
 
