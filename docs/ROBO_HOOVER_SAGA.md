@@ -139,3 +139,19 @@ MAP:     raw_bytes=16768 -> decoded -> rendered PNG (19828 bytes, 1 room)
 - 📌 If the robot ever stops answering the cloud, check
   `GET /api/v1/health` → `control.reason` and `cloud_error` first — they now
   say exactly what is wrong.
+
+## Act VI — Boomy gets the map
+
+The floor plan is an asset for other domestic robots. **yahboom-mcp** (Boomy,
+the Raspbot) now consumes it three ways:
+
+1. **MCP tool** — `lidar(operation="read_dreame_map")` GETs `DREAME_MAP_URL`
+   (default `http://127.0.0.1:10894/api/v1/map`).
+2. **Webapp** — Lidar Map page fetches `GET /api/v1/lidar/dreame-map` (REST
+   proxy added 2026-08-06) and renders the floorplan.
+3. **ROS2 / Nav2** — `ros2/boomy_dreame_map_bridge` polls the same URL and
+   publishes a `nav_msgs/OccupancyGrid` on `/dreame_floorplan` as a static
+   layer (the Raspbot's own MS200 `/scan` remains the live obstacle source).
+
+Verified end-to-end: yahboom `/api/v1/lidar/dreame-map` → dreame-mcp cloud map
+→ 16,768 raw bytes → 19,828-byte PNG, one room, battery 98%.
