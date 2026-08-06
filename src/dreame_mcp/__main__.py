@@ -1,4 +1,4 @@
-"""Run: python -m dreame_mcp --mode dual --port 10894"""
+"""Run: python -m dreame_mcp --mode dual --port 10894 (stdio if --mode stdio)."""
 
 from .server import main
 

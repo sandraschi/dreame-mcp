@@ -8,6 +8,7 @@ import os
 import sys
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -45,7 +46,7 @@ async def lifespan(app: FastAPI):
             mode = "Hybrid" if (client._ip and client._username) else ("Local" if client._ip else "Cloud")
             logger.info("Dreame Protocol client connected [%s] (DID=%s)", mode, client._did)
             if client.auth_key:
-                logger.info("Auth key available — set DREAME_AUTH_KEY=%s", client.auth_key[:30] + "…")
+                logger.debug("Auth key available (DREAME_AUTH_KEY set)")
         else:
             logger.warning("Dreame Protocol connect failed — running in stub mode")
             _state["client"] = None
@@ -95,13 +96,16 @@ async def global_exception_handler(request, exc):
 
 mcp = FastMCP.from_fastapi(app, name="Dreame D20 Pro Plus")
 
+_READ_ONLY = {"readonly": True}
+_MUTATING = {}
+
 # ---------------------------------------------------------------------------
 # Help tool
 # ---------------------------------------------------------------------------
 
 _HELP_CATEGORIES = {
-    "status": "Robot status (battery, state, area). dreame(operation='status').",
-    "map": "LIDAR map image + room data. dreame(operation='map').",
+    "status": "Robot status (battery, state, area). dreame_tool(operation='status').",
+    "map": "LIDAR map image + room data. dreame_tool(operation='map').",
     "control": "start_clean, stop, pause, go_home, find_robot. Supports Local (IP/Token) or Cloud.",
     "connection": "Set DREAME_IP/TOKEN (Local) or DREAME_USER/PASSWORD (Cloud).",
     "agentic": "dreame_agentic_workflow(goal=...) — LLM plans and executes multi-step goals via sampling.",
@@ -109,7 +113,17 @@ _HELP_CATEGORIES = {
 
 
 async def dreame_help(category: str | None = None, topic: str | None = None) -> dict:
-    """Multi-level help for Dreame D20 Pro Plus MCP."""
+    """Multi-level help for Dreame D20 Pro Plus MCP.
+
+    ## Return Format
+    {"help": str, "connected": bool, "mode": str, "did": str|null,
+     "categories": {category: description}} — or {"error": str, "available": [...]}
+    for an unknown category.
+
+    ## Examples
+    dreame_help()
+    dreame_help(category="status")
+    """
     if not category:
         client = _state.get("client")
         mode = "stub"
@@ -131,9 +145,29 @@ async def dreame_help(category: str | None = None, topic: str | None = None) -> 
 # Register MCP tools + prompts
 # ---------------------------------------------------------------------------
 
-mcp.tool()(dreame_tool)
-mcp.tool()(dreame_help)
-mcp.tool()(dreame_agentic_workflow)
+mcp.tool(annotations=_MUTATING)(dreame_tool)
+mcp.tool(annotations=_READ_ONLY)(dreame_help)
+mcp.tool(annotations=_MUTATING)(dreame_agentic_workflow)
+
+
+@mcp.tool(annotations=_READ_ONLY)
+async def dreame_shutdown() -> dict:
+    """Gracefully disconnect the Dreame client and stop the MCP server.
+
+    ## Return Format
+    {"success": bool, "message": str}
+
+    ## Examples
+    dreame_shutdown()
+    """
+    logger.info("dreame_shutdown requested")
+    c = _state.get("client")
+    if c:
+        c.disconnect()
+    _state["client"] = None
+    if _server is not None:
+        _server.should_exit = True
+    return {"success": True, "message": "Dreame MCP shutting down"}
 
 
 @mcp.prompt
@@ -155,9 +189,9 @@ This server uses the DreameHome cloud API — no local token required.
 
    DREAME_REF_PATH=D:/Dev/repos/external/tasshack_dreame_vacuum_ref
 
-2. Start server: uv run python -m dreame_mcp --mode dual --port 10794
-3. Open dashboard: http://localhost:10795
-4. MCP client: dreame(operation='status') then dreame(operation='start_clean')
+2. Start server: uv run python -m dreame_mcp --mode dual --port 10894
+3. Open dashboard: http://localhost:10895
+4. MCP client: dreame_tool(operation='status') then dreame_tool(operation='start_clean')
 5. Agentic: dreame_agentic_workflow(goal='clean the living room then return to dock')"""
 
 
@@ -167,12 +201,12 @@ def dreame_diagnostics() -> str:
     return """Run a quick diagnostic:
 
 1. GET /api/v1/health — check connected: true, DID present
-2. dreame(operation='status') — battery and state
-3. dreame(operation='start_clean') — confirmed working
-4. dreame(operation='go_home') — Return to dock
-5. dreame(operation='map') — LIDAR map retrieval
+2. dreame_tool(operation='status') — battery and state
+3. dreame_tool(operation='start_clean') — confirmed working
+4. dreame_tool(operation='go_home') — Return to dock
+5. dreame_tool(operation='map') — LIDAR map retrieval
 6. dreame_help(category='connection') — ENV reference
-7. Dashboard: http://localhost:10795"""
+7. Dashboard: http://localhost:10895"""
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +340,7 @@ async def api_map_pgm():
             img = Image.open(__import__("io").BytesIO(png_bytes)).convert("L")
             w, h = img.size
             # Convert to OccupancyGrid convention: white(255)=free(0), black(0)=occupied(100)
-            pixels = list(img.getdata())
+            pixels = list(img.getdata())  # type: ignore[arg-type]
             occupancy = []
             for p in pixels:
                 if p > 250:
@@ -366,6 +400,51 @@ async def api_control(cmd: str):
     return out
 
 
+@app.get("/api/v1/diagnostics")
+async def api_diagnostics():
+    """Full diagnostics for CUA-NSIS smoke testing: tools, system info, errors."""
+    import platform
+
+    client = _state.get("client")
+    return {
+        "status": "ok",
+        "server": "dreame-mcp",
+        "version": "0.2.0",
+        "uptime_seconds": 0,
+        "tool_count": 4,
+        "tools": [
+            {"name": "dreame_tool"},
+            {"name": "dreame_help"},
+            {"name": "dreame_agentic_workflow"},
+            {"name": "dreame_shutdown"},
+        ],
+        "system": {
+            "platform": platform.system(),
+            "python": platform.python_version(),
+            "connected": client is not None and client.connected,
+            "mode": "stub",
+        },
+        "errors": [],
+    }
+
+
+@app.post("/api/v1/shutdown")
+async def api_shutdown():
+    """Graceful shutdown of the server (used by the MCP shutdown tool)."""
+    out = await dreame_shutdown()
+    return out
+
+
+@app.get("/api/skills")
+async def api_skills():
+    """List available skills (skill:// resources) for skill-first chat."""
+    skills_dir = Path(__file__).parent / "skills"
+    if not skills_dir.is_dir():
+        return {"skills": []}
+    names = sorted(d.name for d in skills_dir.iterdir() if (d / "SKILL.md").is_file())
+    return {"skills": [{"name": n, "uri": f"skill://{n}/SKILL.md"} for n in names]}
+
+
 # ---------------------------------------------------------------------------
 # LLM Chat endpoints (Ollama proxy)
 # ---------------------------------------------------------------------------
@@ -411,23 +490,28 @@ async def llm_chat(body: dict):
 # Entry point
 # ---------------------------------------------------------------------------
 
+_server: uvicorn.Server | None = None
+
 
 def main():
     import argparse
 
     p = argparse.ArgumentParser(description="Dreame D20 Pro Plus MCP Server")
     p.add_argument("--mode", default="dual", choices=("stdio", "http", "dual"))
-    p.add_argument("--port", type=int, default=int(os.environ.get("DREAME_MCP_PORT", "10794")))
+    p.add_argument("--port", type=int, default=int(os.environ.get("DREAME_MCP_PORT", "10894")))
     args = p.parse_args()
 
     if args.mode == "stdio":
-        from fastmcp.cli import run_stdio
+        import asyncio
 
-        run_stdio(mcp)
+        asyncio.run(mcp.run_stdio_async())
         return
 
+    global _server
     bind_host = os.environ.get("DREAME_MCP_HOST", "127.0.0.1")
-    uvicorn.run(app, host=bind_host, port=args.port)
+    config = uvicorn.Config(app, host=bind_host, port=args.port, log_level="info")
+    _server = uvicorn.Server(config)
+    _server.run()
 
 
 if __name__ == "__main__":

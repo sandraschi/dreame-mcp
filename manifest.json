@@ -1,0 +1,25 @@
+{
+  "manifest_version": "0.2",
+  "name": "dreame-mcp",
+  "version": "0.2.0",
+  "description": "FastMCP 3.4 MCP server and webapp for Dreame robot vacuums via DreameHome cloud",
+  "author": { "name": "sandraschi" },
+  "server": {
+    "type": "python",
+    "entry_point": "src/dreame_mcp/__main__.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run", "--directory", "${PWD}", "python", "-m", "dreame_mcp"],
+      "env": {
+        "PYTHONPATH": "${PWD}/src",
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  },
+  "tools": [
+    { "name": "dreame_tool", "description": "Unified control tool for Dreame robot vacuum (status, map, start_clean, stop, pause, go_home, find_robot, battery)" },
+    { "name": "dreame_help", "description": "Multi-level help for Dreame D20 Pro Plus MCP" },
+    { "name": "dreame_agentic_workflow", "description": "LLM-native agentic workflow for multi-step goals via sampling" },
+    { "name": "dreame_shutdown", "description": "Gracefully disconnect the Dreame client and stop the MCP server" }
+  ]
+}

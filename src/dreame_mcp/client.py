@@ -85,7 +85,7 @@ def _stub_miio():
         def send(self, *a, **kw):
             raise RuntimeError("miio.send() called on a stub. Local control requires python-miio.")
 
-    proto_mod.MiIOProtocol = _MiIOProtocol
+    proto_mod.MiIOProtocol = _MiIOProtocol  # type: ignore[attr-defined]
     sys.modules["miio"] = miio_mod
     sys.modules["miio.miioprotocol"] = proto_mod
 
@@ -105,6 +105,8 @@ def _stub_ha():
 
 def _load_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, str(path))
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Could not load module {name} from {path}")
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
     spec.loader.exec_module(mod)
@@ -145,8 +147,8 @@ def _bootstrap_protocol(ref_path: Path):
 
     # Inject constants into package stub
     dreame_stub = sys.modules[_DREAME_PKG]
-    dreame_stub.DeviceException = sys.modules[f"{_DREAME_PKG}.exceptions"].DeviceException
-    dreame_stub.VERSION = "dreame-mcp-adapter"
+    dreame_stub.DeviceException = sys.modules[f"{_DREAME_PKG}.exceptions"].DeviceException  # type: ignore[attr-defined]
+    dreame_stub.VERSION = "dreame-mcp-adapter"  # type: ignore[attr-defined]
 
     # Load protocol (unified local/cloud)
     proto_mod = _load_module(f"{_DREAME_PKG}.protocol", dreame_dir / "protocol.py")
@@ -388,6 +390,10 @@ class DreameHomeClient:
             logger.error("Bootstrap failed: %s", e)
             return False
 
+        if _protocol_cls is None:
+            logger.error("Bootstrap produced no protocol class")
+            return False
+
         # Tasshack: local control requires (ip, token) with null token; prefer_cloud=False so
         # status/control use UDP miio, not Xiaomi cloud web RPC (unreliable for DreameHome).
         self._protocol = _protocol_cls(
@@ -583,8 +589,13 @@ class DreameHomeClient:
             return None
         if getattr(proto, "dreame_cloud", True):
             try:
-                from custom_components.dreame_vacuum.dreame.const import MAP_PARAMETER_VALUE
-                from custom_components.dreame_vacuum.dreame.types import DIID, DreameVacuumProperty
+                from custom_components.dreame_vacuum.dreame.const import (  # type: ignore[import-not-found]
+                    MAP_PARAMETER_VALUE,
+                )
+                from custom_components.dreame_vacuum.dreame.types import (  # type: ignore[import-not-found]
+                    DIID,
+                    DreameVacuumProperty,
+                )
 
                 r = proto.get_properties(DIID(DreameVacuumProperty.OBJECT_NAME))
                 if r and len(r) > 0:

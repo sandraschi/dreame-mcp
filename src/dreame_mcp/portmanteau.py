@@ -7,25 +7,68 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from typing import Annotated, Literal
 
 from fastmcp import Context
+from pydantic import Field
 
 from .state import _state
 
 logger = logging.getLogger("dreame-mcp.portmanteau")
 
+_DreameOperation = Literal[
+    "status",
+    "battery",
+    "map",
+    "start_clean",
+    "stop",
+    "pause",
+    "go_home",
+    "find_robot",
+]
+
 
 async def dreame_tool(
-    ctx: Context | None = None,
-    operation: str = "status",
-    param1: str | float | None = None,
-    param2: str | float | None = None,
-    payload: dict | None = None,
+    ctx: Annotated[Context | None, Field(description="FastMCP sampling context (auto-injected).")] = None,
+    operation: Annotated[
+        _DreameOperation,
+        Field(
+            description="Operation to perform: status/battery/map telemetry or "
+            "start_clean/stop/pause/go_home/find_robot control commands."
+        ),
+    ] = "status",
+    param1: Annotated[
+        str | float | None,
+        Field(description="Optional operation parameter (unused by current operations)."),
+    ] = None,
+    param2: Annotated[
+        str | float | None,
+        Field(description="Optional second operation parameter (unused by current operations)."),
+    ] = None,
+    payload: Annotated[
+        dict | None,
+        Field(description="Optional structured payload (unused by current operations)."),
+    ] = None,
 ) -> str:
     """Unified control tool for Dreame robot vacuum (DreameHome cloud).
-    Returns Markdown summary for LLM context.
+
+    [RATIONALE] Consolidates telemetry (status, battery, map) and control
+    (start_clean, stop, pause, go_home, find_robot) into one portmanteau so
+    the agent surface stays compact and operations stay grouped by domain.
+
+    ## Return Format
+    Markdown summary for LLM context. Telemetry ops return section headers
+    (## Dreame Robot Status / ## LIDAR Map Summary); control ops return
+    "### Command executed" or "### Control failed" with the error text.
+
+    ## Examples
+    dreame_tool(operation="status")
+    dreame_tool(operation="map")
+    dreame_tool(operation="start_clean")
     """
-    correlation_id = ctx.correlation_id if ctx and hasattr(ctx, "correlation_id") else "direct"
+    correlation_id = "direct"
+    if ctx is not None:
+        correlation_id = getattr(ctx, "correlation_id", None) or "direct"
     op = operation.lower().strip()
     logger.info("dreame(%s) [%s]", op, correlation_id)
 

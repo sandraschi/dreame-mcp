@@ -1,13 +1,13 @@
 {
   "name": "dreame-mcp",
-  "version": "1.0.0",
+  "version": "0.2.0",
   "description": "Industrial Dreame D20 Pro Plus MCP Server",
   "author": "Sandra Schipal",
   "license": "MIT",
   "capabilities": {
     "tools": [
       {
-        "name": "dreame",
+        "name": "dreame_tool",
         "description": "Unified control tool for Dreame robot vacuum (status, map, start_clean, stop, pause, go_home, find_robot, battery)"
       },
       {
@@ -17,6 +17,10 @@
       {
         "name": "dreame_agentic_workflow",
         "description": "LLM-native agentic workflow for multi-step goals via sampling"
+      },
+      {
+        "name": "dreame_shutdown",
+        "description": "Gracefully disconnect the Dreame client and stop the MCP server"
       }
     ]
   },
