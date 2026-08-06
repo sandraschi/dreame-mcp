@@ -1,0 +1,10 @@
+# Normalize line endings — LF everywhere (Biome/CI depend on it)
+* text=auto eol=lf
+
+# Binary assets stay as-is
+*.png binary
+*.ico binary
+*.jpg binary
+*.gif binary
+*.mcpb binary
+*.exe binary

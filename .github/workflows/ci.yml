@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
+    branches: ["main", "master"]
     tags: ["v*"]
+  pull_request:
+    branches: ["main", "master"]
   workflow_dispatch:
 
 jobs:
@@ -15,6 +18,8 @@ jobs:
           version: "latest"
       - run: uv sync --frozen --dev
       - run: uv run ruff check src tests
+      - run: uv run ruff format src --check
+      - run: uv run pyright src
 
   lint-webapp:
     runs-on: windows-latest

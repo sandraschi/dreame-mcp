@@ -5,6 +5,9 @@ __pycache__/
 .ruff_cache/
 .pytest_cache/
 tests/
+scratch/
+*.bak
+*.bak.*
 
 # Discovery & Fleet Metadata
 glama.json
@@ -13,6 +16,7 @@ llms-full.txt
 .git/
 .github/
 .vscode/
+.idea/
 
 # Build Artifacts
 dist/
@@ -22,4 +26,6 @@ build/
 # Non-MCP components (webapp, native, scripts)
 native/
 web_sota/
+webapp/
 scripts/
+reports/

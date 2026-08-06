@@ -9,18 +9,29 @@ __pycache__/
 dist/
 build/
 .eggs/
-uv.lock
 *.bak
-
-# Environment / secrets
-.env
-.env.*
-!.env.example
+*.bak.*
+reports/
 
 # Node / webapp
 webapp/node_modules/
 webapp/dist/
 webapp/package-lock.json
+mcpb/src/
+
+# Tauri / native build artifacts
+native/target/
+native/gen/
+native/resources/*.exe
+native/binaries/*.exe
+
+# MCP bundles
+*.mcpb
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
 
 # IDE
 .vscode/
@@ -40,7 +51,4 @@ D:/Dev/repos/temp/dreame_*
 
 # Tasshack ref clone — NOT committed, must exist locally
 # tasshack_dreame_vacuum_ref/ is a sibling repo, not part of this one
-# Rust / Zed IDE — rust-analyzer may create target/ at repo root
-target/
-
 _dashboard/
