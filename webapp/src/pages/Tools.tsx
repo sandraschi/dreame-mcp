@@ -45,7 +45,7 @@ export default function Tools() {
       <div className="rounded-2xl border border-white/10 bg-[#0f0f12]/80 p-5 space-y-4">
         <p className="text-sm text-slate-400">
           Connect your MCP client to{" "}
-          <code className="text-amber-400">http://localhost:10794/sse</code>{" "}
+          <code className="text-amber-400">http://localhost:10894/sse</code>{" "}
           (SSE transport).
         </p>
         <div>
@@ -87,7 +87,7 @@ export default function Tools() {
           <Code>{`{
   "mcpServers": {
     "dreame": {
-      "url": "http://localhost:10794/sse",
+      "url": "http://localhost:10894/sse",
       "transport": "sse"
     }
   }

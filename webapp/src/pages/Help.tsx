@@ -252,7 +252,10 @@ export default function Help() {
                   ["Frontend port", "10895 (Vite React)"],
                   ["Cloud", "DreameHome EU (Alibaba Cloud)"],
                   ["Protocol", "HTTPS REST + MQTT push"],
-                  ["Ref clone", "D:\\Dev\\repos\\external\\tasshack_dreame_vacuum_ref"],
+                  [
+                    "Ref clone",
+                    "D:\\Dev\\repos\\external\\tasshack_dreame_vacuum_ref",
+                  ],
                 ].map(([k, v]) => (
                   <div key={k} className="flex flex-col gap-0.5">
                     <span className="text-[10px] uppercase tracking-widest text-slate-600">
@@ -270,15 +273,25 @@ export default function Help() {
                   Environment variables
                 </p>
                 <div className="space-y-1.5">
-                  {[
-                    ["DREAME_USER", "DreameHome email/phone", true],
-                    ["DREAME_PASSWORD", "DreameHome password", true],
-                    ["DREAME_COUNTRY", "Cloud region (default: eu)", false],
-                    ["DREAME_DID", "Device ID (auto-discovered)", false],
-                    ["DREAME_AUTH_KEY", "Refresh token from last login", false],
-                    ["DREAME_REF_PATH", "Tasshack ref clone path", false],
-                    ["DREAME_MCP_PORT", "Backend port (default: 10894)", false],
-                  ].map(([k, v, req]) => (
+                  {(
+                    [
+                      ["DREAME_USER", "DreameHome email/phone", true],
+                      ["DREAME_PASSWORD", "DreameHome password", true],
+                      ["DREAME_COUNTRY", "Cloud region (default: eu)", false],
+                      ["DREAME_DID", "Device ID (auto-discovered)", false],
+                      [
+                        "DREAME_AUTH_KEY",
+                        "Refresh token from last login",
+                        false,
+                      ],
+                      ["DREAME_REF_PATH", "Tasshack ref clone path", false],
+                      [
+                        "DREAME_MCP_PORT",
+                        "Backend port (default: 10894)",
+                        false,
+                      ],
+                    ] as Array<[string, string, boolean]>
+                  ).map(([k, v, req]) => (
                     <div key={k} className="flex gap-2 items-start">
                       <Code>{k as string}</Code>
                       <span className="text-slate-500 text-xs">
@@ -392,10 +405,8 @@ export default function Help() {
               </ul>
               <p>
                 <span className="text-slate-300">Errors:</span> HTTP 502 with{" "}
-                <Code>
-                  {"{"}"detail":"…"{"}"}
-                </Code>{" "}
-                — check backend logs and <Code>DREAME_*</Code> env.
+                <Code>{'{ "detail": "…" }'}</Code> — check backend logs and{" "}
+                <Code>DREAME_*</Code> env.
               </p>
               <p>
                 <span className="text-slate-300">Webapp override:</span>{" "}
@@ -485,8 +496,8 @@ export default function Help() {
                 </p>
                 <p className="text-slate-500 text-xs leading-relaxed">
                   This repo loads modules from{" "}
-                  <Code>D:\Dev\repos/external/tasshack_dreame_vacuum_ref</Code> at
-                  runtime (not vendored source). We bootstrap their protocol
+                  <Code>D:\Dev\repos/external/tasshack_dreame_vacuum_ref</Code>{" "}
+                  at runtime (not vendored source). We bootstrap their protocol
                   classes, then wrap them behind FastMCP tools + REST endpoints.
                 </p>
                 <div className="space-y-1 text-xs text-slate-500">

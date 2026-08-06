@@ -198,7 +198,7 @@ export default function Status() {
             <p className="text-sm text-slate-500 col-span-2">
               {status.message}
             </p>
-          )}
+          )}{" "}
         </div>
       )}
     </div>

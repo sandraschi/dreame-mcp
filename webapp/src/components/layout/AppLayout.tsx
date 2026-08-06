@@ -1,11 +1,13 @@
 import { AnimatePresence, motion } from "framer-motion";
 import type React from "react";
 import { useState } from "react";
-import Sidebar from "./Sidebar";
+import useZoom from "../../lib/use-zoom";
 import FloatingChat from "../FloatingChat";
+import Sidebar from "./Sidebar";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  useZoom();
   return (
     <div className="flex w-screen h-screen bg-[#0a0a0c] text-slate-200 overflow-hidden font-sans">
       <Sidebar

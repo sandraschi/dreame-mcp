@@ -7,12 +7,41 @@ import {
   HelpCircle,
   LayoutDashboard,
   List,
+  Moon,
   PlayCircle,
   ScanLine,
   Settings,
+  Sun,
   Wrench,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
+
+// EXPERIMENTAL light mode (invert hack). Not fleet standard - see index.css.
+// Toggling `.dark` off the root flips the invert filter; persisted so the
+// choice survives reloads. Delete this + the CSS block to revert.
+const THEME_KEY = "dreame-light-mode";
+
+function useExperimentalTheme() {
+  const [light, setLight] = useState(() => {
+    try {
+      return localStorage.getItem(THEME_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", !light);
+    try {
+      localStorage.setItem(THEME_KEY, light ? "1" : "0");
+    } catch {
+      // ignore storage errors
+    }
+  }, [light]);
+
+  return { light, toggle: () => setLight((v) => !v) };
+}
 
 const navItems = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -32,6 +61,7 @@ export default function Sidebar({
   isCollapsed: boolean;
   onToggle: () => void;
 }) {
+  const { light, toggle } = useExperimentalTheme();
   return (
     <motion.aside
       initial={false}
@@ -57,6 +87,19 @@ export default function Sidebar({
               </span>
             </motion.div>
           )}
+          <button
+            type="button"
+            onClick={toggle}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-all ml-auto"
+            title={
+              light
+                ? "Switch to dark (experimental light mode)"
+                : "Switch to light (experimental, ugly)"
+            }
+            aria-label="Toggle light mode (experimental)"
+          >
+            {light ? <Moon size={16} /> : <Sun size={16} />}
+          </button>
         </div>
       </div>
       <nav className="flex-1 px-4 space-y-1.5 overflow-y-auto">
