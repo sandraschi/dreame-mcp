@@ -16,12 +16,12 @@ Protocol layer extracted from [Tasshack/dreame-vacuum](https://github.com/Tassha
 
 ## Features
 
-- **MCP tools**: `dreame(operation=...)`  status, map, start_clean, stop, pause, go_home, find_robot, battery
-- **MCP tools**: `dreame_help(category)`, `dreame_agentic_workflow(goal)` with SEP-1577 sampling
+- **MCP tools**: `dreame_tool(operation=...)`  status, map, start_clean, stop, pause, go_home, find_robot, battery
+- **MCP tools**: `dreame_help(category)`, `dreame_agentic_workflow(goal)` with SEP-1577 sampling, `dreame_shutdown()`
 - **Prompts**: `dreame_quick_start`, `dreame_diagnostics`
-- **Skills**: `skills/dreame-operator.md`
-- **REST API**: GET /api/v1/health, /api/v1/status, /api/v1/map; POST /api/v1/control/{cmd}
-- **Webapp**: Dashboard, LIDAR Map, Status, Controls, Settings, Help, MCP Tools
+- **Skills**: `skill://dreame-operator/SKILL.md` (also `GET /api/skills`)
+- **REST API**: GET /api/v1/health, /api/v1/status, /api/v1/map (+ png/pgm/yaml), /api/v1/diagnostics; POST /api/v1/control/{cmd}, /api/v1/shutdown
+- **Webapp**: Dashboard, LIDAR Map, Status, Controls, Settings, Help, MCP Tools, Logs
 
 ## Ports
 
@@ -91,7 +91,7 @@ cd dreame-mcp
 just
 ```
 
-This opens an interactive dashboard showing all available commands. Run `just bootstrap` to install dependencies, then `just serve` or `just dev` to start.
+This opens an interactive dashboard showing all available commands. Run `just bootstrap` to install dependencies, then `just serve` to start the full stack, or `just test` for the mocked suite.
 
 ### Manual Setup
 
@@ -131,7 +131,7 @@ If you don't have `just` installed:
 
 **Map data does not require miIO** on this server: it uses DreameHome cloud + the Tasshack ref at `DREAME_REF_PATH`. Local miIO is optional and often unavailable on DreameHome-only firmware.
 
-- **REST:** `GET http://localhost:10894/api/v1/map` (same JSON as MCP `dreame(operation='map')`).
+- **REST:** `GET http://localhost:10894/api/v1/map` (same JSON as MCP `dreame_tool(operation='map')`).
 - **Fields:** `image` (base64-encoded image when decode/render works), `raw_b64` (always on successful cloud fetch; use for custom decoders or **robotics-mcp / yahboom-mcp**), optional `map_data`, optional `render_error` if the PNG path failed.
 - **Dashboard:** **Map** page at `http://localhost:10895` shows the image when `image` is present.
 
@@ -143,7 +143,7 @@ See **[docs/MAP_AND_ROBOTICS.md](docs/MAP_AND_ROBOTICS.md)** for fleet integrati
 
 ### Map rendering (dependencies)
 
-The rendered image requires the Tasshack stack: `py-mini-racer`, `numpy`, `Pillow`, `cryptography`, and related pins from `uv.lock`. If `dreame(operation='map')` has `render_error` but `raw_b64` is set, the fetch worked and only decode/render failed; check logs and dependencies.
+The rendered image requires the Tasshack stack: `py-mini-racer`, `numpy`, `Pillow`, `cryptography`, and related pins from `uv.lock`. If `dreame_tool(operation='map')` has `render_error` but `raw_b64` is set, the fetch worked and only decode/render failed; check logs and dependencies.
 
 ## Troubleshooting: `Unable to discover the device` / status 502
 
@@ -151,17 +151,22 @@ The rendered image requires the Tasshack stack: `py-mini-racer`, `numpy`, `Pillo
 
 ## Docs
 
+- [Configuration](docs/CONFIGURATION.md)  env vars, connection modes, ports
+- [Development](docs/DEVELOPMENT.md)  stack, recipes, five-gate verification
+- [Tools & API](docs/TOOLS.md)  MCP tools, prompts, REST endpoints
+- [Troubleshooting](docs/TROUBLESHOOTING.md)  common failures and fixes
+- [Onboarding](docs/ONBOARDING.md)  first-run setup (DreameHome account)
 - [Map and fleet robotics](docs/MAP_AND_ROBOTICS.md)  HTTP/MCP consumption, miIO vs cloud, yahboom / robotics integration
 - [PRD](docs/PRD.md)  product context, ports, **5 Map API contract**
 - [Token and Home Assistant](docs/TOKEN_AND_HOME_ASSISTANT.md)  historical miIO reference (v0.2+ uses cloud)
 
-
 ## 🛡️ Industrial Quality Stack
 
-This project adheres to **SOTA 14.1** industrial standards for high-fidelity agentic orchestration:
+This project adheres to **SOTA** industrial standards for high-fidelity agentic orchestration:
 
-- **Python (Core)**: [Ruff](https://astral.sh/ruff) for linting and formatting. Zero-tolerance for `print` statements in core handlers (`T201`).
+- **Python (Core)**: [Ruff](https://astral.sh/ruff) for linting and formatting. Zero-tolerance for `print` statements in core handlers (`T20`).
+- **Python (Types)**: [Pyright](https://github.com/microsoft/pyright) static type checking (five-gate CI).
 - **Webapp (UI)**: [Biome](https://biomejs.dev/) for sub-millisecond linting. Strict `noConsoleLog` enforcement.
 - **Protocol Compliance**: Hardened `stdout/stderr` isolation to ensure crash-resistant JSON-RPC communication.
-- **Automation**: [Justfile](./justfile) recipes for all fleet operations (`just lint`, `just fix`, `just dev`).
+- **Automation**: [Justfile](./justfile) recipes for all fleet operations (`just lint`, `just fix`, `just serve`).
 - **Security**: Automated audits via `bandit` and `safety`.

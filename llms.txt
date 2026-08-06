@@ -1,18 +1,25 @@
 # Dreame MCP Server
 
-Industrial Dreame D20 Pro Plus MCP Server (FastMCP 3.2.0). Talk to DreameHome cloud via the Unified `dreame` tool. Uses Tasshack reference protocol for non-local map rendering.
+Industrial Dreame D20 Pro Plus MCP Server (FastMCP 3.4.x). Talk to DreameHome
+cloud via the unified `dreame_tool` portmanteau. Uses the Tasshack reference
+protocol for local control and cloud map rendering.
+
+Full documentation: [llms-full.txt](llms-full.txt)
 
 ## Tools
-- `dreame`: Core portmanteau for telemetry, mapping, and navigation.
+- `dreame_tool`: Core portmanteau for telemetry, mapping, and navigation.
 - `dreame_help`: Industrial documentation helper.
 - `dreame_agentic_workflow`: LLM sampling dispatcher for multi-step goals.
+- `dreame_shutdown`: Graceful disconnect + server stop.
 
 ## Environment Constants
 - `DREAME_USER`: Cloud email.
 - `DREAME_PASSWORD`: Cloud password.
 - `DREAME_COUNTRY`: Default `eu`.
+- `DREAME_DID`: Device id (auto-discovered when single device).
+- `DREAME_AUTH_KEY`: Refresh token from previous login.
 - `DREAME_REF_PATH`: Path to `tasshack_dreame_vacuum_ref` clone.
 
 ## Networking
-- Backend: `10794`
-- Frontend: `10795`
+- Backend: `10894`
+- Frontend: `10895`

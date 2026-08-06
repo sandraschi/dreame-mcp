@@ -6,6 +6,38 @@ All notable changes to dreame-mcp are documented here.
 
 ## [Unreleased]
 
+### Added — assfix 2026-08-06 (SOTA pass)
+
+- **Ports corrected fleet-wide**: backend default `10794` → `10894` (server.py,
+  justfile `start-hybrid`, prompts); `backend.rs` `BACKEND_PORT` `10700` → `10894`;
+  Tauri CSP `connect-src` → `127.0.0.1:10894`; `cua-nsis-config.json` backend port +
+  `nav_routes`; `Tools.tsx` SSE URL `10794` → `10894`.
+- **`GET /api/v1/diagnostics`** endpoint (tools, system info) for CUA-NSIS smoke testing.
+- **`GET /api/skills`** + `skill://dreame-operator/SKILL.md` resource (skill-first chat).
+- **`dreame_shutdown`** MCP tool + `POST /api/v1/shutdown` (graceful uvicorn exit).
+- **Docstring SOTA** on all four tools: `## Return Format`, `## Examples`,
+  `Annotated+Field` params, `Literal` operation enum, tool annotations.
+- **Webapp**: `API_BASE` → backend port `10894` (fixes prod/Tauri fetch), Tauri
+  `backend-status` listener + exponential-backoff health poll + Restart Backend
+  button + `data-testid` KPIs, `useZoom()` Ctrl+Scroll zoom, 4th chat personality
+  (Custom), 6 example prompts, LLM status dot.
+- **Native pipeline**: `run_server.py` (dual transport) + `dreame-mcp-backend.spec`
+  (PyInstaller) so `just build-native` can produce the embedded backend;
+  multi-layer `free_port()` + TCP health poll in `backend.rs`.
+- **Tooling**: `T20` in ruff select + per-file-ignores; `pyright` + `pre-commit`
+  dev deps; `.pre-commit-config.yaml` + `scripts/pre-commit-biome.ps1`;
+  `just serve` / `just test`; CI gains pyright + format steps and push/PR triggers.
+- **Repo hygiene**: `.gitattributes` (eol=lf), `.gitignore` (`reports/`, `*.mcpb`,
+  native artifacts; `uv.lock` un-ignored), `.mcpbignore` (webapp/, scratch/, *.bak),
+  `.windsurfrules`, `.github/copilot-instructions.md`, `.claude-plugin/` + hooks,
+  `.opencode/skills/session-context`.
+- **Docs**: `docs/CONFIGURATION.md`, `DEVELOPMENT.md`, `TOOLS.md`,
+  `TROUBLESHOOTING.md`, `ONBOARDING.md`; README/llms-full.txt synced.
+- **Fixes**: agentic workflow now reads real status (dict-vs-str bug); auth key no
+  longer logged at INFO; stdio transport uses `run_stdio_async()` (old
+  `fastmcp.cli.run_stdio` import was broken on 3.4.x); pyright clean (13 errors
+  fixed); biome clean (52 format/lint errors fixed).
+
 ### Fixed — LIDAR map (download + image) + local/hybrid (Tasshack)
 
 - **Signed-URL first** on `protocol.cloud` or unified protocol (`get_interim_file_url` / `get_file` / `get_file_url`); `get_device_file` is fallback (limited attempts); then **siid=23, piid=1** (raw map property) and a final `get_file_url`+`get_file` pass. **`MAP_FETCH_TIMEOUT` 60s**; map fetches are **serialized** with a lock; **`DreameVacuumMapDecoder` + `DreameVacuumMapRenderer`**, with rich **`map_data`** (rooms, path, areas, dimensions).

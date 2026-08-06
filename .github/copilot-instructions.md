@@ -1,3 +1,5 @@
+# Dreame-MCP — Copilot Instructions
+
 ## Session Context (Dreame-MCP)
 
 You have access to Dreame robot vacuum control via DreameHome cloud: device status, LIDAR map, and cleaning controls.

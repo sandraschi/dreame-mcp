@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "text",
+            "text": "## Session Context (Dreame-MCP)\n\nYou have access to Dreame robot vacuum control via DreameHome cloud: device status, LIDAR map, and cleaning controls.\n\n**Before starting work:**\n1. Check device status: dreame_tool(operation=\"status\")\n2. View current map: dreame_tool(operation=\"map\")\n3. Verify connectivity: dreame_help(category=\"connection\")\n\n**At end of work:**\n- If a cleaning task was issued, confirm completion: dreame_tool(operation=\"status\")\n- No other cleanup needed (read-only device queries are safe)"
+          }
+        ]
+      }
+    ]
+  }
+}

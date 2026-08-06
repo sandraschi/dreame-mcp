@@ -1,0 +1,6 @@
+{
+  "name": "dreame-mcp",
+  "version": "0.2.0",
+  "description": "Dreame robot vacuum control via DreameHome cloud",
+  "hooks": "../hooks/hooks.json"
+}
