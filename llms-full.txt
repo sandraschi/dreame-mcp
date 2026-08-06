@@ -40,9 +40,10 @@ Dual transport: stdio when no port env is set; HTTP via `DREAME_MCP_PORT`/
 | `dreame_help(category=...)` | status/map/control/connection/agentic help |
 | `dreame_agentic_workflow(goal=...)` | LLM plans + executes multi-step goals via ctx.sample |
 | `dreame_shutdown()` | Graceful disconnect + server stop |
+| `show_dreame_status_app()` | Live status as a Prefab card |
 
 Prompts: `dreame_quick_start`, `dreame_diagnostics`.
-Skill: `skill://dreame-operator/SKILL.md`.
+Skill: `skill://dreame-operator/SKILL.md`. Resource: `dreame://status`.
 
 ## REST Endpoints
 - `GET /api/v1/health` — liveness probe (connected, mode, DID)
@@ -87,6 +88,15 @@ Skill: `skill://dreame-operator/SKILL.md`.
 - Five-gate: ruff check, ruff format --check, pyright, pytest, biome+tsc
 
 ## Troubleshooting
+- **Control/status unavailable** — `GET /api/v1/health` reports
+  `control.available` / `control.reason` / `cloud_error` with the exact cause
+  (70016 credentials, 2FA, captcha, UDP discovery dead). Cloud is the reliable
+  path; the null-token UDP trick no longer works on current firmware.
+- **Wrong ref clone** — the protocol layer must load from the v2 fork
+  (`tasshack_dreame_vacuum_ref`) which ships `DreameVacuumDreameHomeCloudProtocol`;
+  upstream v1 renamed the class and its legacy Xiaomi auth rejects DreameHome
+  accounts. The server auto-picks a usable ref. Full story:
+  `docs/ROBO_HOOVER_SAGA.md`.
 - Backend 502 / `Unable to discover the device`: robot did not answer UDP miio —
   check `DREAME_IP`, use real `DREAME_TOKEN` or cloud creds; see
   `docs/TROUBLESHOOTING.md`.

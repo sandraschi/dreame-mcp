@@ -18,13 +18,32 @@
 Copy `.env.example` to `.env` and fill in your details. The `.env` file lives at
 the repo root only — one source of truth (no fallback chains).
 
+### The Tasshack reference clone
+
+The protocol layer is bootstrapped from an external clone of
+`Tasshack/dreame-vacuum`. **Use the v2 fork, not the upstream v1 repo** —
+upstream v1 renamed the Dreame-native cloud class and only ships the legacy
+Xiaomi auth flow, which rejects DreameHome accounts. The canonical path is
+`D:\Dev\repos\external\tasshack_dreame_vacuum_ref`; the server also
+auto-discovers candidates and prefers any clone that ships
+`DreameVacuumDreameHomeCloudProtocol`, so a wrong `DREAME_REF_PATH` no longer
+breaks the cloud path.
+
+See [The Dreame Robo Hoover Saga](ROBO_HOOVER_SAGA.md) for the full story of
+how control was lost and restored.
+
 ## Connection modes
 
 | Mode | Credentials | Commands | LIDAR Map |
 |---|---|---|---|
 | Local | `DREAME_IP` | local UDP miio | no |
-| Cloud | `DREAME_USER` + `DREAME_PASSWORD` | cloud | yes |
-| Hybrid (recommended) | both | local | yes |
+| Cloud | `DREAME_USER` + `DREAME_PASSWORD` | cloud (DreameHome API) | yes |
+| Hybrid (recommended) | both | local first, cloud fallback | yes |
+
+The cloud path (Dreame-native `api.dreame.tech`) is the reliable one — it works
+even when the robot does not answer UDP miio (the null-token trick no longer
+works on current firmware). Control/status/map all fall back to the cloud
+automatically when the local path fails.
 
 ## Ports
 

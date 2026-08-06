@@ -17,9 +17,10 @@ Protocol layer extracted from [Tasshack/dreame-vacuum](https://github.com/Tassha
 ## Features
 
 - **MCP tools**: `dreame_tool(operation=...)`  status, map, start_clean, stop, pause, go_home, find_robot, battery
-- **MCP tools**: `dreame_help(category)`, `dreame_agentic_workflow(goal)` with SEP-1577 sampling, `dreame_shutdown()`
+- **MCP tools**: `dreame_help(category)`, `dreame_agentic_workflow(goal)` with SEP-1577 sampling, `dreame_shutdown()`, `show_dreame_status_app()` (Prefab card)
 - **Prompts**: `dreame_quick_start`, `dreame_diagnostics`
 - **Skills**: `skill://dreame-operator/SKILL.md` (also `GET /api/skills`)
+- **Resources**: `dreame://status`
 - **REST API**: GET /api/v1/health, /api/v1/status, /api/v1/map (+ png/pgm/yaml), /api/v1/diagnostics; POST /api/v1/control/{cmd}, /api/v1/shutdown
 - **Webapp**: Dashboard, LIDAR Map, Status, Controls, Settings, Help, MCP Tools, Logs
 
@@ -151,6 +152,7 @@ The rendered image requires the Tasshack stack: `py-mini-racer`, `numpy`, `Pillo
 
 ## Docs
 
+- [The Dreame Robo Hoover Saga](docs/ROBO_HOOVER_SAGA.md)  how control worked, broke, and was restored (with the map!)
 - [Configuration](docs/CONFIGURATION.md)  env vars, connection modes, ports
 - [Development](docs/DEVELOPMENT.md)  stack, recipes, five-gate verification
 - [Tools & API](docs/TOOLS.md)  MCP tools, prompts, REST endpoints

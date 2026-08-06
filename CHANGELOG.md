@@ -6,6 +6,37 @@ All notable changes to dreame-mcp are documented here.
 
 ## [Unreleased]
 
+### Fixed — The Dreame Robo Hoover Saga (control + LIDAR map restored, 2026-08-06)
+
+- **Root cause**: `DREAME_REF_PATH` pointed at the upstream v1 ref clone
+  (`dreame-vacuum`), which renamed `DreameVacuumDreameHomeCloudProtocol` and
+  only ships the legacy Xiaomi auth — DreameHome accounts get 70016. On top of
+  that, the null-token UDP trick stopped working on current firmware.
+- **Fix**: `client.py` now auto-resolves a ref clone that ships the
+  Dreame-native class, builds a dedicated `_dreame_cloud` client
+  (`account_type="dreame"`, `api.dreame.tech`), routes commands via the
+  device's `bindDomain` host (`_host` → `dreame-iot-com-10000/...`), and falls
+  back to the cloud for status/control/map when local UDP fails.
+- **Result (live verified)**: status (battery 98%), control
+  (`find_robot` → code 0), and the full LIDAR map pipeline
+  (16,768 raw bytes → rendered PNG, 1 room) through `GET /api/v1/map`.
+- **Observability**: `/api/v1/health` now returns `control.available`,
+  `control.reason`, `cloud_error` (70016/2FA/captcha classified);
+  `scripts/discover.py` + `just check-discovery` (working LAN sweep).
+- See `docs/ROBO_HOOVER_SAGA.md` for the full story.
+
+### Added — 2026-08-06 (round 2)
+
+- **`show_dreame_status_app`** Prefab card tool (`app=True`) + **`dreame://status`**
+  resource; tool surface now 5 tools + 1 resource.
+- **Zustand LLM store** (`webapp/src/store/llm.ts`) shared by the chat and the
+  new Settings Local LLM section (provider status + model select with
+  `data-testid="llm-model-select"`).
+- **Playwright e2e** (`webapp/e2e/fleet.spec.ts`, 5 tests: health,
+  diagnostics, skills, SPA no-console-errors, sidebar nav walk) — 5/5 passing.
+- **`.agents/skills`** (Antigravity) + **`renovate.json`**; biome excludes
+  `dist/`/`test-results` build output.
+
 ### Added — assfix 2026-08-06 (SOTA pass)
 
 - **Ports corrected fleet-wide**: backend default `10794` → `10894` (server.py,

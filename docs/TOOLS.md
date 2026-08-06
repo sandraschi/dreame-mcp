@@ -29,6 +29,15 @@ into `dreame_tool` as needed.
 
 Gracefully disconnects the Dreame client and stops the server.
 
+## `show_dreame_status_app()`
+
+Live robot status as a rich Prefab card (state, battery, charging, cleaning,
+fan speed) with a plain-text fallback.
+
+## Resources
+
+- `dreame://status` — live status as Markdown (read via `resources/read`).
+
 ## Prompts
 
 - `dreame_quick_start` — setup and connect instructions

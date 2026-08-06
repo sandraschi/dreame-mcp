@@ -23,6 +23,8 @@ protocol layer; without it the server runs in stub mode.
 - `just test` — mocked test suite
 - `just lint` / `just fix` — ruff + biome
 - `just e2e` — Playwright audit (webapp)
+- `just check-discovery` — sweep the LAN for the robot's current IP
+  (`scripts/discover.py`: ping sweep + UDP miio hello + mDNS)
 - `just mcpb-pack` — Claude Desktop bundle
 - `just build-native` + `just cua-nsis-test` — Tauri NSIS build + smoke test
 - `just cua-webapp-test` — pre-Tauri browser walk

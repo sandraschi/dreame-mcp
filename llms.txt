@@ -11,6 +11,7 @@ Full documentation: [llms-full.txt](llms-full.txt)
 - `dreame_help`: Industrial documentation helper.
 - `dreame_agentic_workflow`: LLM sampling dispatcher for multi-step goals.
 - `dreame_shutdown`: Graceful disconnect + server stop.
+- `show_dreame_status_app`: Live status as a Prefab card.
 
 ## Environment Constants
 - `DREAME_USER`: Cloud email.

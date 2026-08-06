@@ -20,6 +20,7 @@
     { "name": "dreame_tool", "description": "Unified control tool for Dreame robot vacuum (status, map, start_clean, stop, pause, go_home, find_robot, battery)" },
     { "name": "dreame_help", "description": "Multi-level help for Dreame D20 Pro Plus MCP" },
     { "name": "dreame_agentic_workflow", "description": "LLM-native agentic workflow for multi-step goals via sampling" },
-    { "name": "dreame_shutdown", "description": "Gracefully disconnect the Dreame client and stop the MCP server" }
+    { "name": "dreame_shutdown", "description": "Gracefully disconnect the Dreame client and stop the MCP server" },
+    { "name": "show_dreame_status_app", "description": "Show live Dreame robot status as a rich card" }
   ]
 }
