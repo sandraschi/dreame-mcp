@@ -1,6 +1,15 @@
-import { Settings as SettingsIcon } from "lucide-react";
+import { Bot, Settings as SettingsIcon } from "lucide-react";
+import { useEffect } from "react";
+import { useLlmStore } from "../store/llm";
 
 export default function Settings() {
+  const { providerOk, models, selectedModel, discover, setModel } =
+    useLlmStore();
+
+  useEffect(() => {
+    discover();
+  }, [discover]);
+
   return (
     <div className="space-y-6 py-4 max-w-4xl">
       <div className="flex items-center gap-4">
@@ -14,6 +23,57 @@ export default function Settings() {
           </p>
         </div>
       </div>
+
+      <div className="rounded-2xl border border-white/10 bg-[#0f0f12]/80 p-5">
+        <h2 className="text-sm font-bold text-slate-200 mb-3 flex items-center gap-2">
+          <Bot className="w-4 h-4 text-amber-400" />
+          Local LLM
+        </h2>
+        <div className="space-y-3 text-sm">
+          <div
+            className="flex items-center gap-2"
+            data-testid="llm-provider-select"
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${providerOk === null ? "bg-gray-500 animate-pulse" : providerOk ? "bg-green-500" : "bg-red-500"}`}
+            />
+            <span className="text-slate-300">
+              Ollama (:11434) —{" "}
+              {providerOk === null
+                ? "probing..."
+                : providerOk
+                  ? "detected"
+                  : "not found"}
+            </span>
+          </div>
+          {providerOk === false && (
+            <p className="text-sm text-amber-300/90">
+              Install Ollama or LM Studio to enable AI features.
+            </p>
+          )}
+          {models.length > 0 && (
+            <div className="flex items-center gap-3">
+              <label htmlFor="llm-model" className="text-slate-400 text-sm">
+                Model
+              </label>
+              <select
+                id="llm-model"
+                data-testid="llm-model-select"
+                value={selectedModel}
+                onChange={(e) => setModel(e.target.value)}
+                className="bg-zinc-800 text-zinc-100 border border-zinc-600 rounded px-2 py-1.5 text-sm"
+              >
+                {models.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="rounded-2xl border border-white/10 bg-[#0f0f12]/80 p-5 space-y-3 text-sm text-slate-400">
         <p className="text-slate-500 text-xs border-b border-white/5 pb-3">
           v0.2+ uses{" "}

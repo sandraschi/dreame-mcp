@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { API_BASE } from "../lib/api";
+import { useLlmStore } from "../store/llm";
 
 interface Message {
   id: string;
@@ -37,11 +38,8 @@ export default function FloatingChat() {
   const [chat, setChat] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [providerOk, setProviderOk] = useState<boolean | null>(null);
-  const [model, setModel] = useState(
-    () => localStorage.getItem("llm_model") || "",
-  );
-  const [modelList, setModelList] = useState<string[]>([]);
+  const { providerOk, models, selectedModel, discover, setModel } =
+    useLlmStore();
   const [skillName, setSkillName] = useState("");
   const [personality, setPersonality] = useState(
     () => localStorage.getItem("fc_personality") || "helpful",
@@ -66,23 +64,7 @@ export default function FloatingChat() {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only model discovery
   useEffect(() => {
-    fetch(`${API_BASE}/api/llm/providers`)
-      .then((r) => r.json())
-      .then((d) => {
-        const providers = d.providers || d;
-        const list: string[] = [];
-        if (Array.isArray(providers))
-          for (const p of providers) if (p.models) list.push(...p.models);
-        setModelList(list);
-        setProviderOk(list.length > 0);
-        if (!model && list.length > 0) {
-          setModel(list[0]);
-          localStorage.setItem("llm_model", list[0]);
-        }
-      })
-      .catch(() => {
-        setProviderOk(false);
-      });
+    discover();
   }, []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: bottomRef is a stable ref
@@ -113,7 +95,7 @@ export default function FloatingChat() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           provider: "ollama",
-          model,
+          model: selectedModel,
           prompt: text,
           system: sp?.prompt,
         }),
@@ -202,16 +184,13 @@ export default function FloatingChat() {
                   </option>
                 ))}
               </select>
-              {modelList.length > 0 && (
+              {models.length > 0 && (
                 <select
                   className="bg-slate-800 border border-slate-600 rounded text-xs px-2 py-1 text-slate-300 max-w-[140px]"
-                  value={model}
-                  onChange={(e) => {
-                    setModel(e.target.value);
-                    localStorage.setItem("llm_model", e.target.value);
-                  }}
+                  value={selectedModel}
+                  onChange={(e) => setModel(e.target.value)}
                 >
-                  {modelList.map((m) => (
+                  {models.map((m) => (
                     <option key={m} value={m}>
                       {m.split(":")[0]}
                     </option>
