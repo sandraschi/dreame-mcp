@@ -16,6 +16,7 @@ const Code = ({ children }: { children: string }) => {
       <button
         type="button"
         onClick={copy}
+        data-testid="tools-copy"
         className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg bg-white/10 hover:bg-white/20"
       >
         {copied ? (
@@ -30,11 +31,11 @@ const Code = ({ children }: { children: string }) => {
 
 export default function Tools() {
   return (
-    <div className="space-y-6 py-4 max-w-4xl">
+    <div className="space-y-6 py-4 max-w-4xl" data-testid="tools-page">
       <div className="flex items-center gap-4">
         <Wrench className="text-amber-400 w-8 h-8" />
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">
+          <h1 className="text-2xl font-bold text-white tracking-tight" data-testid="tools-title">
             MCP Tools
           </h1>
           <p className="text-slate-400 text-sm">

@@ -128,7 +128,7 @@ export default function Logs() {
   const currentPage = Math.floor(offset / limit) + 1;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="logs-page">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-bold text-slate-200 mr-2">Logs</h2>
         <select
@@ -138,6 +138,7 @@ export default function Logs() {
             setLevel(e.target.value);
             setOffset(0);
           }}
+          data-testid="logs-level"
         >
           <option value="">All levels</option>
           {LEVELS.map((l) => (
@@ -166,6 +167,7 @@ export default function Logs() {
           placeholder="Search..."
           value={search}
           onChange={(e) => handleSearch(e.target.value)}
+          data-testid="logs-search"
         />
         <select
           className="h-8 rounded border border-slate-700 bg-slate-800 px-2 text-xs text-slate-300"

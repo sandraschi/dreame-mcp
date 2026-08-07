@@ -2,6 +2,21 @@
 
 All notable changes to dreame-mcp are documented here.
 
+## [0.2.0] - 2026-08-07 (polish pass)
+
+### Added
+- **data-testid on all 9 pages** (13 → 35): page containers, titles, and key controls
+  (controls-page/control-*, help-tab-*, logs-level/search, map-refresh, mission-header,
+  status-refresh, tools-copy, settings-llm-section) — every page ≥3, CUA/Playwright targetable
+- **`bun.lock`** committed (fleet Bun standard; migrated from package-lock.json)
+
+### Verified (were already present — earlier assessment false negatives)
+- 6+ chat example prompts with `data-testid="example-prompts"`
+- Chat LLM provider status dot (`llm-status-dot`, probes `/api/llm/providers`) + model dropdown
+
+### Gates (all pass)
+ruff 0 · pyright 0 · pytest 17 passed/4 skipped · tsc 0 · biome clean
+
 ## [0.2.0] - 2026-08-06 (Hoover control + LiDAR map)
 
 ### Fixed

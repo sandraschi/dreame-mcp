@@ -63,12 +63,12 @@ export default function Status() {
   }
 
   return (
-    <div className="space-y-6 py-4 max-w-4xl">
+    <div className="space-y-6 py-4 max-w-4xl" data-testid="status-page">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Activity className="text-amber-400 w-8 h-8" />
           <div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">
+            <h1 className="text-2xl font-bold text-white tracking-tight" data-testid="status-title">
               Status
             </h1>
             <p className="text-slate-400 text-sm">
@@ -80,6 +80,7 @@ export default function Status() {
           type="button"
           onClick={fetchAll}
           disabled={loading}
+          data-testid="status-refresh"
           className="flex items-center gap-2 px-4 py-2 rounded-xl border border-white/10 bg-white/5 text-slate-400 hover:text-slate-200 text-sm disabled:opacity-50"
         >
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />

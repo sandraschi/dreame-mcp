@@ -95,13 +95,13 @@ export default function MissionControl() {
       </motion.aside>
 
       {/* Main Mission Control */}
-      <main className="flex-1 overflow-y-auto relative p-8">
+      <main className="flex-1 overflow-y-auto relative p-8" data-testid="mission-page">
         <div className="sota-glow -top-40 -right-40" />
 
         {/* Header Stats */}
-        <header className="flex items-center justify-between mb-8">
+        <header className="flex items-center justify-between mb-8" data-testid="mission-header">
           <div className="animate-fade-in">
-            <h1 className="text-3xl font-extrabold tracking-tight mb-1">
+            <h1 className="text-3xl font-extrabold tracking-tight mb-1" data-testid="mission-title">
               Mission Control
             </h1>
             <p className="text-slate-400 text-sm flex items-center gap-2">

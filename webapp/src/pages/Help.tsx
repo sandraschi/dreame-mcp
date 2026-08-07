@@ -31,11 +31,11 @@ export default function Help() {
   const [tab, setTab] = useState("robot");
 
   return (
-    <div className="space-y-6 py-4 max-w-4xl">
+    <div className="space-y-6 py-4 max-w-4xl" data-testid="help-page">
       <div className="flex items-center gap-4">
         <HelpCircle className="text-amber-400 w-8 h-8" />
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Help</h1>
+          <h1 className="text-2xl font-bold text-white tracking-tight" data-testid="help-title">Help</h1>
           <p className="text-slate-400 text-sm">
             Dreame D20 Pro Plus MCP server — DreameHome cloud
           </p>
@@ -48,6 +48,7 @@ export default function Help() {
             type="button"
             key={t.id}
             onClick={() => setTab(t.id)}
+            data-testid={`help-tab-${t.id}`}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${
               tab === t.id
                 ? "bg-amber-600 text-white shadow-lg shadow-amber-600/30"

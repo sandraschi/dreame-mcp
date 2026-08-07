@@ -25,7 +25,7 @@ export default function Settings() {
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-[#0f0f12]/80 p-5">
-        <h2 className="text-sm font-bold text-slate-200 mb-3 flex items-center gap-2">
+        <h2 className="text-sm font-bold text-slate-200 mb-3 flex items-center gap-2" data-testid="settings-llm-section">
           <Bot className="w-4 h-4 text-amber-400" />
           Local LLM
         </h2>

@@ -37,11 +37,11 @@ export default function Controls() {
   };
 
   return (
-    <div className="space-y-6 py-4 max-w-4xl">
+    <div className="space-y-6 py-4 max-w-4xl" data-testid="controls-page">
       <div className="flex items-center gap-4">
         <PlayCircle className="text-amber-400 w-8 h-8" />
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">
+          <h1 className="text-2xl font-bold text-white tracking-tight" data-testid="controls-title">
             Controls
           </h1>
           <p className="text-slate-400 text-sm">
@@ -73,6 +73,7 @@ export default function Controls() {
             key={c.id}
             onClick={() => send(c.id)}
             disabled={loading !== null}
+            data-testid={`control-${c.id}`}
             className="flex items-center gap-4 p-5 rounded-2xl border border-white/10 bg-[#0f0f12]/80 hover:border-amber-500/30 hover:bg-amber-500/10 disabled:opacity-50 transition-all"
           >
             {loading === c.id ? (

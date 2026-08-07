@@ -70,12 +70,12 @@ export default function MapPage() {
       : null;
 
   return (
-    <div className="flex flex-col py-4 px-4 sm:px-6 max-w-5xl mx-auto">
+    <div className="flex flex-col py-4 px-4 sm:px-6 max-w-5xl mx-auto" data-testid="map-page">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
           <ScanLine className="text-amber-400 w-8 h-8" />
           <div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">
+            <h1 className="text-2xl font-bold text-white tracking-tight" data-testid="map-title">
               LIDAR Map
             </h1>
             <p className="text-slate-400 text-sm">
@@ -87,6 +87,7 @@ export default function MapPage() {
           type="button"
           onClick={fetchMap}
           disabled={loading}
+          data-testid="map-refresh"
           className="flex items-center gap-2 px-4 py-2 rounded-xl border border-white/10 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 text-sm disabled:opacity-50"
         >
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
