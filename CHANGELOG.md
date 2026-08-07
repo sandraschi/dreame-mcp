@@ -2,6 +2,28 @@
 
 All notable changes to dreame-mcp are documented here.
 
+## [0.2.0] - 2026-08-06 (Hoover control + LiDAR map)
+
+### Fixed
+- **Robot control restored + LiDAR map download** via Dreame-native cloud (the saga end: the
+  Hoover/Dreame actually responds to commands and serves its floor map)
+- **All 13 HIGH + most MEDIUM findings from the 08-06 assessment closed in one burst**:
+  native pipeline (spec + run_server.py), port cluster 10894 everywhere (backend.rs, CSP,
+  cua config), API_BASE to backend, Tauri integration (zoom/status/restart), shutdown tool,
+  docstring SOTA, MCPB staging, docs/ + ONBOARDING, session injection (all 5 channels),
+  agentic workflow bug, T20 ruff, pyright dev dep + CI five-gate, free_port + health poll,
+  Zustand LLM store, Prefab status card, `dreame://status` resource, Playwright suite (5 tests),
+  renovate, Antigravity skill
+- Auth key logging downgraded to DEBUG boolean (no key prefix at INFO)
+- Exponential backoff on dashboard health poll (1s × 2^n)
+
+### Gates (all pass, 2026-08-07 re-assessment)
+ruff 0 · pyright 0 · pytest 17 passed/4 skipped · tsc 0 · biome clean (23 files)
+
+### Remaining (deferred, MEDIUM)
+data-testid sparse (13), no example prompts (6+ bar), `bun.lock` absent (npm-based),
+chat provider status indicator.
+
 ---
 
 ## [Unreleased]
