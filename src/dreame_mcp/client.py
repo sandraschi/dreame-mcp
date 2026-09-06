@@ -1092,6 +1092,12 @@ def _point_to_dict(point) -> dict | None:
 def client_from_env() -> DreameHomeClient | None:
     """Build a DreameHomeClient from environment variables supporting Hybrid Mode."""
     load_dotenv()
+    if not os.environ.get("DREAME_USER") and not os.environ.get("DREAME_IP"):
+        # Fleet starters may launch uvicorn with a CWD outside the repo root,
+        # which previously left the server in stub mode with no credentials.
+        _repo_env = Path(__file__).resolve().parent.parent.parent / ".env"
+        if _repo_env.is_file():
+            load_dotenv(_repo_env)
     user = os.environ.get("DREAME_USER", "").strip()
     pwd = os.environ.get("DREAME_PASSWORD", "").strip()
     ip = os.environ.get("DREAME_IP", "").strip()

@@ -35,7 +35,12 @@ export default function Help() {
       <div className="flex items-center gap-4">
         <HelpCircle className="text-amber-400 w-8 h-8" />
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight" data-testid="help-title">Help</h1>
+          <h1
+            className="text-2xl font-bold text-white tracking-tight"
+            data-testid="help-title"
+          >
+            Help
+          </h1>
           <p className="text-slate-400 text-sm">
             Dreame D20 Pro Plus MCP server — DreameHome cloud
           </p>
@@ -324,7 +329,20 @@ export default function Help() {
                 },
                 {
                   problem: "Backend shows connected: false",
-                  fix: "DREAME_USER / DREAME_PASSWORD not set or wrong. Check webapp\\start.ps1 credentials section.",
+                  fix: "Read the mode in GET /api/v1/health first. unconfigured = no credentials in .env (set DREAME_USER / DREAME_PASSWORD or DREAME_IP, then restart). offline = credentials are fine but the robot is unreachable — control.reason and startup_error name the exact cause (local UDP down and/or cloud login error).",
+                },
+                {
+                  problem:
+                    "Robot offline in DreameHome app / gone from the router",
+                  fix: "The robot lost Wi-Fi (not a server bug). Check the router's DHCP client list for it, ping its last IP, and run uv run python scripts/discover.py from the repo root — no miio answer anywhere means the bot is off the air, not misconfigured.",
+                },
+                {
+                  problem: "How to re-pair the robot's Wi-Fi",
+                  fix: "1) Hold the Home button 3-5s until the voice prompt + blinking Wi-Fi light. 2) DreameHome app → + → follow prompts (Bluetooth on, phone within 1-2m; the bot opens a dreame-vacuum-xxxx hotspot to receive credentials). 3) Use the 2.4 GHz network — the robot cannot see 5 GHz. 4) Give it a DHCP reservation in the router, put the new IP in DREAME_IP in .env, restart the backend once.",
+                },
+                {
+                  problem: 'Cloud login says "user password not match"',
+                  fix: "The password in .env no longer matches the DreameHome account — whatever logs you into the app is the truth, put that exact string in DREAME_PASSWORD. DreameHome allows ~5 attempts, so do not spam restarts while guessing.",
                 },
                 {
                   problem: "go_home (return to dock) not working",

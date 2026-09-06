@@ -72,9 +72,56 @@ export interface ControlResponse {
   error?: string;
 }
 
+export interface ConnectionInfo {
+  mode: string;
+  connected: boolean;
+  configured: boolean;
+  ip: string | null;
+  did: string | null;
+  user: string | null;
+  user_set: boolean;
+  password_set: boolean;
+  country: string;
+  cloud_error: string | null;
+  startup_error: string | null;
+}
+
+export interface ConnectionUpdate {
+  ip?: string;
+  user?: string;
+  password?: string;
+  country?: string;
+}
+
+export interface ConnectionUpdateResult {
+  updated: string[];
+  env_file: string;
+  connection: ConnectionInfo;
+}
+
+export interface ConnectionTestResult {
+  success: boolean;
+  mode?: string;
+  error?: string;
+  did?: string | null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, init);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as {
+        error?: string;
+        detail?: string;
+        message?: string;
+      };
+      detail = body.error ?? body.detail ?? body.message ?? detail;
+    } catch {
+      /* non-JSON error body — keep HTTP status */
+    }
+    throw new Error(detail);
+  }
   return (await res.json()) as T;
 }
 
@@ -93,6 +140,19 @@ export const api = {
       version: string;
       tool_count: number;
     }>("/api/v1/diagnostics"),
+  getConnection: () => request<ConnectionInfo>("/api/v1/connection"),
+  updateConnection: (update: ConnectionUpdate) =>
+    request<ConnectionUpdateResult>("/api/v1/connection", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(update),
+    }),
+  testConnection: (update: ConnectionUpdate) =>
+    request<ConnectionTestResult>("/api/v1/connection/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(update),
+    }),
   shutdown: () =>
     request<ControlResponse>("/api/v1/shutdown", { method: "POST" }),
 };

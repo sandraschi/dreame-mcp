@@ -112,9 +112,42 @@ async def dreame_tool(
 # ---------------------------------------------------------------------------
 
 
+def offline_reasons() -> list[str]:
+    """Honest why-control-is-down reasons from the startup snapshot.
+
+    Distinguishes 'never configured' from 'configured but unreachable' —
+    the old code blamed missing credentials for both.
+    """
+    if not _state.get("configured", False):
+        return [
+            "not configured: set DREAME_USER/DREAME_PASSWORD (cloud) or DREAME_IP (local) in .env, then restart the backend"
+        ]
+    conn = _state.get("connection", {}) or {}
+    reasons: list[str] = []
+    if conn.get("ip"):
+        reasons.append(
+            f"local path down: no miio answer at {conn['ip']}:54321 "
+            "(robot off Wi-Fi, powered off, or IP changed — check the router)"
+        )
+    if conn.get("cloud_error"):
+        reasons.append(f"cloud path down: {conn['cloud_error']}")
+    if not reasons:
+        reasons.append("no control path configured (set DREAME_IP or DREAME_USER/DREAME_PASSWORD)")
+    return reasons
+
+
 async def fetch_status_data(client) -> dict:
     if client is None:
-        return _stub_status()
+        conn = _state.get("connection", {}) or {}
+        return {
+            "success": False,
+            "error": ("Not configured. " if not _state.get("configured", False) else "Robot offline. ")
+            + " | ".join(offline_reasons()),
+            "unconfigured": not _state.get("configured", False),
+            "offline": bool(_state.get("configured", False)),
+            "ip": conn.get("ip"),
+            "did": conn.get("did"),
+        }
     st = await client.get_status()
     if st.error:
         return {"success": False, "error": st.error}
@@ -211,17 +244,3 @@ def _format_control_md(data: dict, cmd: str) -> str:
     if data.get("success"):
         return f"### Command executed\n\n**Operation:** `{cmd}`\n**Message:** {data.get('message', 'Success')}"
     return f"### Control failed\n\n**Operation:** `{cmd}`\n**Error:** {data.get('error', 'Unknown error')}"
-
-
-def _stub_status() -> dict:
-    return {
-        "success": True,
-        "battery": 85,
-        "state": "idle",
-        "is_charging": False,
-        "is_cleaning": False,
-        "cleaned_area_m2": 0.0,
-        "cleaning_time_s": 0,
-        "fan_speed": "0",
-        "message": "Stub - set DREAME_USER and DREAME_PASSWORD",
-    }

@@ -2,6 +2,38 @@
 
 All notable changes to dreame-mcp are documented here.
 
+## [Unreleased] - 2026-09-06 (honest status)
+
+### Fixed
+- **Status/health no longer blame missing credentials for an unreachable
+  robot**: `mode` is now `hybrid`/`local`/`cloud` when live, `offline` when
+  credentials exist but neither path answers, and `unconfigured` only when
+  `.env` truly has no credentials. The fake Battery-85%/idle stub dict is
+  deleted — `/api/v1/status` returns `success: false` with the real reason
+  (local UDP down at `DREAME_IP:54321` and/or the cloud login error), and
+  `/api/v1/health` keeps the startup snapshot (`did`, `cloud_error`,
+  `startup_error`) instead of blanking it.
+- **`.env` loads even when launched with the wrong working directory**:
+  `client_from_env()` falls back to the repo-root `.env` (fleet starters
+  launch `uvicorn dreame_mcp.server:app` from outside the repo, which used
+  to leave the backend credential-less).
+- **Docs**: Help → Troubleshoot tab, `docs/TROUBLESHOOTING.md`, and the mcd
+  project page now cover robot Wi-Fi loss (diagnose → Wi-Fi reset → re-pair
+  on 2.4 GHz → DHCP reservation → `DREAME_IP` update).
+- **Connection editable in Settings**: new `GET`/`POST /api/v1/connection`
+  (IP, DreameHome user/password/country; password never returned, empty =
+  keep) with live reconnect and atomic `.env` persist. Settings page has a
+  Robot-connection   card (status + form + attempt-limit warning) — no more
+  `.env` hand-editing after a Wi-Fi re-pair.
+- **Test-before-save**: `POST /api/v1/connection/test` dry-runs the form
+  values (or stored `.env`) against the robot/cloud without persisting
+  anything or touching live state. Settings has a matching Test button —
+  wrong values fail loudly before they can become the saved config. (A test
+  with a wrong cloud password still costs one login attempt — warned in UI.)
+
+### Gates
+ruff 0 · pytest 17 passed/4 skipped · biome clean · tsc 0
+
 ## [0.2.0] - 2026-08-07 (polish pass)
 
 ### Added

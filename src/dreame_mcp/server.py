@@ -17,14 +17,15 @@ from fastapi.responses import JSONResponse
 from fastmcp import FastMCP
 from fastmcp.server.server import ToolResult  # type: ignore[attr-defined]
 
-from .activity_log import ActivityLog, create_log_router
+from .activity_log import ActivityLog, create_log_router, install_log_handler
 from .agentic import dreame_agentic_workflow
-from .client import client_from_env
+from .client import DreameHomeClient, client_from_env
 from .portmanteau import (
     dreame_tool,
     execute_control_data,
     fetch_map_data,
     fetch_status_data,
+    offline_reasons,
 )
 from .state import _state
 
@@ -36,24 +37,100 @@ logging.basicConfig(
 logger = logging.getLogger("dreame-mcp")
 
 
+def _mode(client) -> str:
+    """Connection mode: hybrid/local/cloud when live, else unconfigured/offline."""
+    if client:
+        return "hybrid" if (client._ip and client._username) else ("local" if client._ip else "cloud")
+    return "unconfigured" if not _state.get("configured", False) else "offline"
+
+
+def _connection_snapshot(client) -> dict:
+    """Startup snapshot so status stays honest when connect fails."""
+    if client is None:
+        return {"configured": False, "ip": None, "did": None, "has_cloud_creds": False, "cloud_error": None}
+    return {
+        "configured": True,
+        "ip": client._ip,
+        "did": client._did,
+        "has_cloud_creds": bool(client._username and client._password),
+        "cloud_error": client.cloud_error,
+    }
+
+
+def _repo_env_path() -> Path:
+    """Repo-root .env — same file client_from_env() falls back to."""
+    return Path(__file__).resolve().parent.parent.parent / ".env"
+
+
+def _read_env_file(path: Path) -> list[str]:
+    try:
+        return path.read_text(encoding="utf-8").splitlines(keepends=True)
+    except OSError:
+        return []
+
+
+def update_dotenv(values: dict[str, str], path: Path | None = None) -> Path:
+    """Merge keys into the repo-root .env (atomic write, .bak backup).
+
+    Only keys present in `values` are touched; comments, blank lines and all
+    other entries are preserved. Missing keys are appended.
+    """
+    target = path or _repo_env_path()
+    lines = _read_env_file(target)
+    if target.is_file():
+        backup = target.with_name(f"{target.name}.{datetime.now():%Y%m%d_%H%M%S}.bak")
+        try:
+            backup.write_bytes(target.read_bytes())
+        except OSError:
+            logger.warning("Could not back up %s before .env update", target)
+    pending = dict(values)
+    out: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            key = stripped.split("=", 1)[0].strip()
+            if key in pending:
+                out.append(f"{key}={pending.pop(key)}\n")
+                continue
+        out.append(line)
+    for key, value in pending.items():
+        if not out or not out[-1].endswith("\n"):
+            out.append("\n")
+        out.append(f"{key}={value}\n")
+    tmp = target.with_suffix(".tmp")
+    tmp.write_text("".join(out), encoding="utf-8")
+    tmp.replace(target)
+    return target
+
+
+async def _establish(client):
+    """Connect one client and record the outcome in _state. Shared by lifespan
+    startup and the Settings reconnect endpoint."""
+    _state["configured"] = client is not None
+    if client is None:
+        _state["connection"] = _connection_snapshot(None)
+        _state["startup_error"] = "No credentials (DREAME_IP/TOKEN or USER/PWD) — not configured"
+        _state["client"] = None
+        return
+    ok = await client.connect()
+    _state["connection"] = _connection_snapshot(client)
+    if ok:
+        _state["client"] = client
+        _state["startup_error"] = None
+        mode = "Hybrid" if (client._ip and client._username) else ("Local" if client._ip else "Cloud")
+        logger.info("Dreame Protocol client connected [%s] (DID=%s)", mode, client._did)
+        if client.auth_key:
+            logger.debug("Auth key available (DREAME_AUTH_KEY set)")
+    else:
+        _state["client"] = None
+        _state["startup_error"] = " | ".join(offline_reasons())
+        logger.warning("Dreame Protocol connect failed — robot offline (%s)", _state["startup_error"])
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Dreame MCP starting")
-    client = client_from_env()
-    if client:
-        ok = await client.connect()
-        if ok:
-            _state["client"] = client
-            mode = "Hybrid" if (client._ip and client._username) else ("Local" if client._ip else "Cloud")
-            logger.info("Dreame Protocol client connected [%s] (DID=%s)", mode, client._did)
-            if client.auth_key:
-                logger.debug("Auth key available (DREAME_AUTH_KEY set)")
-        else:
-            logger.warning("Dreame Protocol connect failed — running in stub mode")
-            _state["client"] = None
-    else:
-        logger.info("No credentials (DREAME_IP/TOKEN or USER/PWD) — running in stub mode")
-        _state["client"] = None
+    await _establish(client_from_env())
 
     yield
 
@@ -82,6 +159,8 @@ app.add_middleware(
 )
 
 mcp_log = ActivityLog()
+install_log_handler(mcp_log)
+mcp_log.add("INFO", "Dreame MCP activity log ready", kind="server", meta={"service": "dreame-mcp"})
 app.include_router(create_log_router(mcp_log), prefix="/api")
 
 
@@ -127,14 +206,12 @@ async def dreame_help(category: str | None = None, topic: str | None = None) -> 
     """
     if not category:
         client = _state.get("client")
-        mode = "stub"
-        if client:
-            mode = "hybrid" if (client._ip and client._username) else ("local" if client._ip else "cloud")
+        conn = _state.get("connection", {}) or {}
         return {
             "help": "Dreame D20 Pro Plus MCP (Local/Cloud Hybrid)",
             "connected": client is not None and client.connected,
-            "mode": mode,
-            "did": client._did if client else None,
+            "mode": _mode(client),
+            "did": client._did if client else conn.get("did"),
             "categories": _HELP_CATEGORIES,
         }
     if category not in _HELP_CATEGORIES:
@@ -187,11 +264,19 @@ async def show_dreame_status_app() -> ToolResult:
 
     client = _state.get("client")
     if client is None:
+        if not _state.get("configured", False):
+            heading, detail = (
+                "Not configured",
+                "Set DREAME_USER/DREAME_PASSWORD or DREAME_IP in .env, then restart the backend.",
+            )
+        else:
+            heading = "Offline"
+            detail = " | ".join(offline_reasons())
         return ToolResult(
-            content="Robot not connected — set DREAME_USER/DREAME_PASSWORD in .env.",
+            content=f"Robot {heading.lower()} — {detail}",
             structured_content=PrefabApp(  # type: ignore[call-arg]
                 title="Dreame Robot",
-                components=[Heading("Not connected"), Row(label="Status", value="stub mode")],  # type: ignore[call-arg]
+                components=[Heading(heading), Row(label="Status", value=detail)],  # type: ignore[call-arg]
             ),
         )
     try:
@@ -274,7 +359,9 @@ async def dreame_status_resource() -> str:
     """Live Dreame robot status as Markdown (read via resource://)."""
     client = _state.get("client")
     if client is None:
-        return "**Robot:** not configured (stub mode)"
+        if not _state.get("configured", False):
+            return "**Robot:** not configured (set DREAME_USER/DREAME_PASSWORD or DREAME_IP in .env)"
+        return "**Robot offline:** " + " | ".join(offline_reasons())
     st = await client.get_status()
     if st.error:
         return f"**Status unavailable:** {st.error}"
@@ -293,19 +380,18 @@ async def dreame_status_resource() -> str:
 @app.get("/api/v1/health")
 async def health():
     client = _state.get("client")
-    mode = "stub"
-    if client:
-        mode = "hybrid" if (client._ip and client._username) else ("local" if client._ip else "cloud")
+    conn = _state.get("connection", {}) or {}
     control = _control_status(client)
     return {
         "status": "ok",
         "service": "dreame-mcp",
         "connected": client is not None and client.connected,
         "local_miot": client.local_miot_ready() if client else False,
-        "mode": mode,
-        "did": client._did if client else None,
+        "mode": _mode(client),
+        "did": client._did if client else conn.get("did"),
         "control": control,
-        "cloud_error": getattr(client, "cloud_error", None) if client else None,
+        "cloud_error": getattr(client, "cloud_error", None) if client else conn.get("cloud_error"),
+        "startup_error": _state.get("startup_error"),
         "timestamp": datetime.now().isoformat(),
     }
 
@@ -313,7 +399,11 @@ async def health():
 def _control_status(client) -> dict:
     """Why control may be unavailable right now — one of the most-asked questions."""
     if client is None:
-        return {"available": False, "reason": "no credentials configured (stub mode)"}
+        reasons = offline_reasons()
+        out: dict = {"available": False, "reason": " | ".join(reasons)}
+        out["unconfigured"] = not _state.get("configured", False)
+        out["offline"] = bool(_state.get("configured", False))
+        return out
     local_ok = client.local_miot_ready()
     cloud_ok = bool(getattr(client, "cloud_error", None) is None and client._username)
     if local_ok:
@@ -376,6 +466,133 @@ async def api_status():
     except Exception as e:
         logger.exception("Route status failed")
         return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+
+def _connection_info() -> dict:
+    """Public connection snapshot for Settings — never includes secrets."""
+    client = _state.get("client")
+    conn = _state.get("connection", {}) or {}
+    return {
+        "mode": _mode(client),
+        "connected": client is not None and client.connected,
+        "configured": bool(_state.get("configured", False)),
+        "ip": client._ip if client else conn.get("ip"),
+        "did": client._did if client else conn.get("did"),
+        "user": (client._username or None) if client else None,
+        "user_set": bool((client._username if client else None) or os.environ.get("DREAME_USER")),
+        "password_set": bool(os.environ.get("DREAME_PASSWORD")),
+        "country": os.environ.get("DREAME_COUNTRY", "eu") or "eu",
+        "cloud_error": getattr(client, "cloud_error", None) if client else conn.get("cloud_error"),
+        "startup_error": _state.get("startup_error"),
+    }
+
+
+@app.get("/api/v1/connection")
+async def api_connection_get():
+    return _connection_info()
+
+
+def _file_env() -> dict[str, str]:
+    """Current .env values (file truth — process env may be narrower)."""
+    values: dict[str, str] = {}
+    for line in _read_env_file(_repo_env_path()):
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            key, _, value = stripped.partition("=")
+            values[key.strip()] = value.strip()
+    return values
+
+
+@app.post("/api/v1/connection/test")
+async def api_connection_test(payload: dict):
+    """Dry-run: try the given (or currently stored) settings WITHOUT saving.
+
+    Merges the body over the .env file values in memory only, connects a
+    throwaway client, then disconnects. Nothing is written, _state untouched.
+    NOTE: a test with a wrong cloud password still costs one login attempt.
+    """
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="JSON object expected")
+    allowed = {"ip", "user", "password", "country"}
+    unknown = set(payload) - allowed
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown keys: {sorted(unknown)}")
+    file_env = _file_env()
+
+    def pick(form_key: str, env_key: str, default: str = "") -> str:
+        raw = payload.get(form_key)
+        if raw is not None and str(raw).strip():
+            return str(raw).strip()
+        return file_env.get(env_key, default)
+
+    probe = DreameHomeClient(
+        username=pick("user", "DREAME_USER") or None,
+        password=pick("password", "DREAME_PASSWORD") or None,
+        country=pick("country", "DREAME_COUNTRY", "eu") or "eu",
+        ip=pick("ip", "DREAME_IP") or None,
+        token=file_env.get("DREAME_TOKEN") or None,
+        did=file_env.get("DREAME_DID") or None,
+        auth_key=file_env.get("DREAME_AUTH_KEY") or None,
+        ref_path=Path(file_env["DREAME_REF_PATH"]) if file_env.get("DREAME_REF_PATH") else None,
+    )
+    try:
+        ok = await probe.connect()
+    finally:
+        try:
+            probe.disconnect()
+        except Exception:
+            pass
+    if ok:
+        return {"success": True, "mode": _mode(probe), "did": probe._did}
+    reasons = []
+    if probe._ip:
+        reasons.append(f"no miio answer at {probe._ip}:54321")
+    if probe.cloud_error:
+        reasons.append(str(probe.cloud_error))
+    return {"success": False, "error": " | ".join(reasons) or "connect failed", "did": probe._did}
+
+
+@app.post("/api/v1/connection")
+async def api_connection_update(payload: dict):
+    """Update connection settings (DREAME_IP/USER/PASSWORD/COUNTRY) and reconnect.
+
+    Only keys present in the body are changed; an empty password means
+    "leave unchanged". Persists to the repo-root .env, applies to the live
+    process env, then reconnects. Returns the new connection snapshot.
+    """
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="JSON object expected")
+    allowed = {"ip", "user", "password", "country"}
+    unknown = set(payload) - allowed
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown keys: {sorted(unknown)}")
+    env_map = {"ip": "DREAME_IP", "user": "DREAME_USER", "password": "DREAME_PASSWORD", "country": "DREAME_COUNTRY"}
+    updates: dict[str, str] = {}
+    for key in allowed:
+        if key not in payload or payload[key] is None:
+            continue
+        value = str(payload[key]).strip()
+        if key == "password" and not value:
+            continue  # empty password = leave unchanged
+        updates[env_map[key]] = value
+    if not updates:
+        return {"updated": [], "connection": _connection_info()}
+    try:
+        saved = update_dotenv(updates)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Could not write .env: {e}") from e
+    for env_key, value in updates.items():
+        os.environ[env_key] = value
+    old = _state.get("client")
+    if old:
+        try:
+            old.disconnect()
+        except Exception:
+            pass
+    logger.info("Connection settings updated (%s) — reconnecting", sorted(updates))
+    await _establish(client_from_env())
+    info = _connection_info()
+    return {"updated": sorted(updates), "env_file": str(saved), "connection": info}
 
 
 @app.get("/api/v1/map")
@@ -533,7 +750,7 @@ async def api_diagnostics():
             "platform": platform.system(),
             "python": platform.python_version(),
             "connected": client is not None and client.connected,
-            "mode": "stub",
+            "mode": _mode(client),
         },
         "errors": [],
     }
