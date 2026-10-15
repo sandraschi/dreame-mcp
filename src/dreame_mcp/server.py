@@ -3,12 +3,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -28,6 +30,9 @@ from .portmanteau import (
     offline_reasons,
 )
 from .state import _state
+
+if TYPE_CHECKING:
+    from prefab_ui import PrefabApp  # type: ignore[attr-defined]
 
 logging.basicConfig(
     level=logging.INFO,
@@ -127,6 +132,14 @@ async def _establish(client):
         logger.warning("Dreame Protocol connect failed — robot offline (%s)", _state["startup_error"])
 
 
+async def _teardown() -> None:
+    """Disconnect the live client, if any. Shared by lifespan shutdown and the
+    stdio entry point."""
+    c = _state.get("client")
+    if c:
+        c.disconnect()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Dreame MCP starting")
@@ -135,9 +148,7 @@ async def lifespan(app: FastAPI):
     yield
 
     logger.info("Dreame MCP shutting down")
-    c = _state.get("client")
-    if c:
-        c.disconnect()
+    await _teardown()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -245,7 +256,33 @@ async def dreame_shutdown() -> dict:
     _state["client"] = None
     if _server is not None:
         _server.should_exit = True
+    elif _serving_stdio:
+        asyncio.get_running_loop().call_later(0.5, sys.exit, 0)
     return {"success": True, "message": "Dreame MCP shutting down"}
+
+
+def _status_card(heading: str, rows: list[tuple[str, str]]) -> PrefabApp:
+    """Build the status card that MCP clients render.
+
+    prefab_ui takes the content tree as `view=`, and `Row` is a flex container
+    rather than a label/value pair, so each entry is a Row holding a bold label
+    and its value. The card used to be passed as `components=` with
+    `Row(label=..., value=...)`, and prefab_ui ignores both of those silently:
+    the card has always rendered empty.
+    """
+    from prefab_ui import PrefabApp  # type: ignore[attr-defined]
+    from prefab_ui.components import Column, Heading, Row, Text  # type: ignore[attr-defined]
+
+    return PrefabApp(
+        title="Dreame Robot",
+        view=Column(
+            gap=2,
+            children=[
+                Heading(heading),
+                *[Row(children=[Text(label, bold=True), Text(value)]) for label, value in rows],
+            ],
+        ),
+    )
 
 
 @mcp.tool(app=True, annotations=_READ_ONLY)
@@ -259,9 +296,6 @@ async def show_dreame_status_app() -> ToolResult:
     ## Examples
     show_dreame_status_app()
     """
-    from prefab_ui import PrefabApp  # type: ignore[attr-defined]
-    from prefab_ui.components import Heading, Row  # type: ignore[attr-defined]
-
     client = _state.get("client")
     if client is None:
         if not _state.get("configured", False):
@@ -274,10 +308,7 @@ async def show_dreame_status_app() -> ToolResult:
             detail = " | ".join(offline_reasons())
         return ToolResult(
             content=f"Robot {heading.lower()} — {detail}",
-            structured_content=PrefabApp(  # type: ignore[call-arg]
-                title="Dreame Robot",
-                components=[Heading(heading), Row(label="Status", value=detail)],  # type: ignore[call-arg]
-            ),
+            structured_content=_status_card(heading, [("Status", detail)]),
         )
     try:
         st = await client.get_status()
@@ -287,17 +318,14 @@ async def show_dreame_status_app() -> ToolResult:
     if st.error:
         return ToolResult(
             content=f"Status unavailable: {st.error}",
-            structured_content=PrefabApp(  # type: ignore[call-arg]
-                title="Dreame Robot",
-                components=[Heading("Status unavailable"), Row(label="Error", value=st.error)],  # type: ignore[call-arg]
-            ),
+            structured_content=_status_card("Status unavailable", [("Error", st.error)]),
         )
     rows = [
-        Row(label="State", value=str(st.state)),  # type: ignore[call-arg]
-        Row(label="Battery", value=f"{st.battery}%"),  # type: ignore[call-arg]
-        Row(label="Charging", value="YES" if st.is_charging else "NO"),  # type: ignore[call-arg]
-        Row(label="Cleaning", value="ACTIVE" if st.is_cleaning else "IDLE"),  # type: ignore[call-arg]
-        Row(label="Fan speed", value=str(st.fan_speed)),  # type: ignore[call-arg]
+        ("State", str(st.state)),
+        ("Battery", f"{st.battery}%"),
+        ("Charging", "YES" if st.is_charging else "NO"),
+        ("Cleaning", "ACTIVE" if st.is_cleaning else "IDLE"),
+        ("Fan speed", str(st.fan_speed)),
     ]
     content = (
         f"## Dreame Robot Status\n- State: {st.state}\n- Battery: {st.battery}%\n"
@@ -306,7 +334,7 @@ async def show_dreame_status_app() -> ToolResult:
     )
     return ToolResult(
         content=content,
-        structured_content=PrefabApp(title="Dreame Robot", components=[Heading("Live status"), *rows]),  # type: ignore[call-arg]
+        structured_content=_status_card("Live status", rows),
     )
 
 
@@ -478,7 +506,6 @@ def _connection_info() -> dict:
         "configured": bool(_state.get("configured", False)),
         "ip": client._ip if client else conn.get("ip"),
         "did": client._did if client else conn.get("did"),
-        "user": (client._username or None) if client else None,
         "user_set": bool((client._username if client else None) or os.environ.get("DREAME_USER")),
         "password_set": bool(os.environ.get("DREAME_PASSWORD")),
         "country": os.environ.get("DREAME_COUNTRY", "eu") or "eu",
@@ -572,8 +599,8 @@ async def api_connection_update(payload: dict):
         if key not in payload or payload[key] is None:
             continue
         value = str(payload[key]).strip()
-        if key == "password" and not value:
-            continue  # empty password = leave unchanged
+        if key in ("user", "password") and not value:
+            continue  # empty account or password = leave unchanged
         updates[env_map[key]] = value
     if not updates:
         return {"updated": [], "connection": _connection_info()}
@@ -821,6 +848,28 @@ async def llm_chat(body: dict):
 _server: uvicorn.Server | None = None
 
 
+_serving_stdio = False
+
+
+async def _run_stdio() -> None:
+    """Serve MCP over stdio, running the startup sequence the HTTP path gets
+    from the FastAPI lifespan.
+
+    `mcp` is built with FastMCP.from_fastapi(app), which only runs the app's
+    lifespan when an ASGI server serves it. In --mode stdio uvicorn never
+    starts, so nothing calls _establish(), _state stays unconfigured and every
+    tool reports "Not configured" however good the credentials are. Connect
+    here instead, and disconnect on the way out.
+    """
+    global _serving_stdio
+    await _establish(client_from_env())
+    _serving_stdio = True
+    try:
+        await mcp.run_stdio_async()
+    finally:
+        await _teardown()
+
+
 def main():
     import argparse
 
@@ -832,7 +881,7 @@ def main():
     if args.mode == "stdio":
         import asyncio
 
-        asyncio.run(mcp.run_stdio_async())
+        asyncio.run(_run_stdio())
         return
 
     global _server
