@@ -273,6 +273,8 @@ _STATE_MAP = {
     14: "upgrading",
 }
 
+_CLOUD_FILE_METHODS = frozenset({"get_device_file", "get_file", "get_file_url", "get_interim_file_url"})
+
 _ACTION_MAP = {
     # ref: custom_components/dreame_vacuum/dreame/types.py  DreameVacuumActionMapping
     "start_clean": (2, 1),  # START
@@ -551,14 +553,21 @@ class DreameHomeClient:
                         target = records[0]
                     if target:
                         self._did = str(target.get("did", "")) or self._did
+                        # The cloud client was constructed before the DID was
+                        # known, and it builds every command payload from its own
+                        # copy of it. Left unset, sendCommand posts did="None" and
+                        # the gateway answers 400 Bad Request.
+                        if self._did and getattr(cloud, "_did", None) != self._did:
+                            cloud._did = self._did
                         bind = target.get("bindDomain")
                         if bind and hasattr(cloud, "_host"):
                             cloud._host = bind
                             logger.info("Cloud command host: %s (did=%s)", bind, self._did)
                         elif self._did:
                             logger.info("DID=%s (no bindDomain in device record)", self._did)
-                    # Populate _model/_uid/_host on the cloud client so the map
-                    # file API (get_interim_file_url) can sign URLs.
+                    # Populate _model/_uid on the cloud client so the map file API
+                    # (get_interim_file_url) can sign URLs. Depends on _did being
+                    # set above — it posts {"did": self._did} as well.
                     try:
                         cloud.get_device_info()
                     except Exception as e:
@@ -664,7 +673,10 @@ class DreameHomeClient:
 
             state_str = _STATE_MAP.get(state_code, f"state_{state_code}")
             is_charging = charging_code in (1, 2)
-            is_cleaning = state_code in (1, 6, 7, 11)
+            # States that put the robot to work on the floor, per DreameVacuumState
+            # in the reference types.py. CHARGING(6) and BUILDING(11) are not
+            # cleaning; SWEEPING_AND_MOPPING(12) is.
+            is_cleaning = state_code in (1, 7, 12, 25, 27, 38, 101)
 
             return DreameStatus(
                 state=state_str,
@@ -707,12 +719,12 @@ class DreameHomeClient:
 
         func = getattr(self._protocol, method, None)
         cloud = getattr(self._protocol, "cloud", None)
-        if func is None and method in {
-            "get_device_file",
-            "get_file",
-            "get_file_url",
-            "get_interim_file_url",
-        }:
+        if method in _CLOUD_FILE_METHODS and cloud is not None and not getattr(cloud, "_logged_in", False):
+            # The protocol's own cloud is the legacy MiHome client, which is not
+            # logged in for DreameHome accounts. Calling it always raises, and
+            # the error was logged on every map fetch before the fallback ran.
+            return self._safe_call_cloud(method, *args, **kwargs)
+        if func is None and method in _CLOUD_FILE_METHODS:
             if cloud is not None:
                 func = getattr(cloud, method, None)
         if not func:
