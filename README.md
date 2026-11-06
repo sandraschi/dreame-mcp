@@ -136,7 +136,7 @@ If you don't have `just` installed:
 - **Fields:** `image` (base64-encoded image when decode/render works), `raw_b64` (always on successful cloud fetch; use for custom decoders or **robotics-mcp / yahboom-mcp**), optional `map_data`, optional `render_error` if the PNG path failed.
 - **Dashboard:** **Map** page at `http://localhost:10895` shows the image when `image` is present.
 
-**Download path (cloud):** matches Home Assistant’s Tasshack integration — resolve **`OBJECT_NAME`** (property 6.3) when available, then **`get_interim_file_url` / `get_file`** (signed object storage). **`get_device_file`** is only a fallback; it often returns `80001` if the cloud cannot reach the device at that moment.
+**Download path (cloud):** matches Home Assistant’s Tasshack integration — ask the robot for a fresh map (action 6.1) or read **`OBJECT_NAME`** (property 6.3), download the part before the comma with **`get_interim_file_url` / `get_file`** (signed object storage), and decrypt it with the key after the comma and the model's IV. Without a live map, or when it cannot be decrypted, the saved map from the map list (6.8) comes back, with `"source": "saved"`. **`get_device_file`** is only a fallback; it often returns `80001` if the cloud cannot reach the device at that moment.
 
 **Render path:** raw bytes are decoded with **`DreameVacuumMapDecoder.decode_map`** and drawn with **`DreameVacuumMapRenderer.render_map`** (not `DreameMapVacuumMapManager` methods, which only orchestrate HA state). The ref clone’s `custom_components.…` packages are given proper `__path__` at load time so `map.py` imports cleanly.
 

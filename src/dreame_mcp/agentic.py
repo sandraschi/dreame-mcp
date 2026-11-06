@@ -69,5 +69,5 @@ async def dreame_agentic_workflow(
         text = getattr(result, "text", None)
         return text or str(result)
     except Exception as e:
-        logger.exception("Agentic workflow sampling failed")
+        logger.warning("Agentic workflow unavailable: %s", e)
         return f"Workflow failed: {e}"
