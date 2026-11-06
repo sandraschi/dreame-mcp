@@ -5,11 +5,13 @@ This document describes how **floor map / LIDAR-related data** is obtained in dr
 ## End-to-end pipeline (current implementation)
 
 1. **Auth** — `DreameHomeClient` logs in and connects MQTT (optional for map).
-2. **Object name** — Prefer **`get_properties` on `OBJECT_NAME` (6.3)**; fall back to the protocol’s computed `object_name` string (`model/uid/did/0`).
-3. **Download (preferred)** — **`get_interim_file_url(object_name)`** (or `get_file_url` as fallback) then **`get_file(url)`** to pull the map blob from signed URLs — same order as Tasshack’s `map._get_interim_file_data` / Home Assistant map camera.
-4. **Download (fallback)** — `get_device_file` with a small set of `type` values. Cloud may return `80001` (device not reachable) here even when the signed-URL path works.
-5. **Render** — Raw bytes → str → **`DreameVacuumMapDecoder.decode_map`**, then **`DreameVacuumMapRenderer.render_map`**; base64 the returned **image bytes** into the JSON **`image`** field. `DreameMapVacuumMapManager` is used for IV/vslam context when present; it is **not** the public decode/render API.
-6. **Concurrency** — Map fetches are serialized with a lock so the dashboard and `/api` do not overlap long-running downloads.
+2. **Fresh map** — Ask the robot to upload its current map: action **6.1** (request map, an I-frame with `req_type=1, force_type=1`), as the DreameHome app does. Its reply names the map object (6.3, or the older 6.13 as `1,<name>,<key>`). The request does not move the robot. Without it, `OBJECT_NAME` (6.3) can name a map minutes old, and the robot position stays frozen.
+3. **Object name** — Otherwise read **`OBJECT_NAME` (6.3)**; fall back to the protocol's computed `object_name` (`model/uid/did/0`). The name has the form **`<name>,<key>`**: only `<name>` is the file in cloud storage (asking for the whole string gets `NoSuchKey`), and `<key>` decrypts it.
+4. **Download (preferred)** — **`get_interim_file_url(name)`** (or `get_file_url` as fallback), then **`get_file(url)`** from the signed URL. This is the same order as Tasshack's `map._get_interim_file_data` and the Home Assistant map camera.
+5. **Download (fallback)** — `get_device_file` with a small set of `type` values. The cloud may return `80001` (device not reachable) here even when the signed-URL path works.
+6. **Decrypt and render** — Raw bytes → str → **`DreameVacuumMapDecoder.decode_map(raw, 1, 0, iv, key)`**. The file is AES-CBC: the key comes from the object name, and the **IV belongs to the model**, from the reference project's `DEVICE_INFO` table (looked up by the model in the cloud device record, e.g. `dreame.vacuum.r2363a`). Then **`DreameVacuumMapRenderer.render_map`**, base64'd into **`image`**.
+7. **Saved map fallback** — If the live map cannot be downloaded or decrypted, property **6.8** (`MAP_LIST`) names a JSON file: `{"mapstr": [{"id", "name", "angle", "map"}], "curr_id"}`. Each `map` decodes with `decode_saved_map`, and `curr_id` is the current map's `map_id`. It has rooms and the charger, but not the robot's current position. The answer's **`source`** says `live` or `saved`; after a failed decryption, **`live_error`** says why. Property 6.9 (`RECOVERY_MAP_LIST`) names the backups the app can restore.
+8. **Concurrency** — Map fetches are serialized with a lock so the dashboard and `/api` do not overlap long-running downloads.
 
 ## Does the map require miIO?
 
@@ -55,7 +57,8 @@ Protocol and map logic are loaded at runtime from a local clone of [Tasshack/dre
 
 ## Operational notes
 
-- A **published map** on the robot (cleaning / mapping run) improves the chance that cloud `OBJECT_NAME` and file fetch succeed.
+- `NoSuchKey` on a map download means the `,<key>` part was sent as part of the file name; strip it (see step 3).
+- A robot that has never mapped has no saved map; the live map then shows only what it has seen so far.
 - Wrong **`DREAME_COUNTRY`** or **`DREAME_DID`** can yield empty or failed fetches.
 - If rendering fails, **`raw_b64`** is still the main artifact for robotics pipelines that implement their own map handling.
 
