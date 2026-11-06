@@ -27,6 +27,7 @@ import os
 import sys
 import threading
 import types as _types
+import zlib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -331,6 +332,49 @@ def _miot_did_slots(n: int, cloud_did: str | None) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _split_object_name(object_name: str) -> tuple[str, str | None]:
+    """Split a map object name 'name,key' into the file name and its decryption key.
+
+    The robot reports its live map as e.g. 'ali_dreame/<model>/<did>/1,<key>'.
+    Only the part before the comma names the file in cloud storage; asking for
+    the whole string gets NoSuchKey. The key decrypts the downloaded file.
+    """
+    name, sep, key = str(object_name).strip().partition(",")
+    return name, (key or None) if sep else None
+
+
+_IV_CACHE: dict[str, str | None] = {}
+
+
+def _map_aes_iv(model: str | None) -> str | None:
+    """The AES IV the reference project lists for a model ('dreame.vacuum.r2363a'), or None.
+
+    Encrypted map files are AES-CBC with a key from the object name and an IV
+    that belongs to the model; the reference keeps the IVs in its DEVICE_INFO
+    table. Models without one send unencrypted maps.
+    """
+    if not model:
+        return None
+    short = model[model.rfind(".") + 1 :]
+    if short in _IV_CACHE:
+        return _IV_CACHE[short]
+    iv: str | None = None
+    try:
+        from custom_components.dreame_vacuum.dreame.const import (  # type: ignore[import-not-found]
+            DEVICE_INFO,
+        )
+
+        info = json.loads(zlib.decompress(base64.b64decode(DEVICE_INFO), zlib.MAX_WBITS | 32))
+        index = info[3].get(short)
+        entry = info[0][index] if index is not None else None
+        if entry and len(entry) == 4 and 0 <= entry[3] < len(info[2]):
+            iv = info[2][entry[3]] or None
+    except Exception as e:
+        logger.debug("No map IV for %s: %s", model, e)
+    _IV_CACHE[short] = iv
+    return iv
+
+
 def _classify_cloud_failure(cloud) -> str:
     """Turn a failed DreameHome cloud login into an actionable reason.
 
@@ -380,6 +424,7 @@ class DreameHomeClient:
         self._ip = ip
         self._token = token if token else "0" * 32
         self._did = did
+        self._model: str | None = None  # e.g. dreame.vacuum.r2363a, from the cloud device record
         self._auth_key = auth_key
         self._ref_path = ref_path or _REF_DEFAULT
         self._protocol = None
@@ -553,6 +598,7 @@ class DreameHomeClient:
                         target = records[0]
                     if target:
                         self._did = str(target.get("did", "")) or self._did
+                        self._model = target.get("model") or self._model
                         # The cloud client was constructed before the DID was
                         # known, and it builds every command payload from its own
                         # copy of it. Left unset, sendCommand posts did="None" and
@@ -895,6 +941,9 @@ class DreameHomeClient:
                 return {"success": False, "error": "Not connected"}
             try:
                 name_resolved = self._resolve_live_map_object_name()
+                map_key: str | None = None
+                if name_resolved:
+                    name_resolved, map_key = _split_object_name(name_resolved)
                 raw: bytes | None = None
                 on_display: str | None = name_resolved
                 attempted: list[dict[str, str]] = []
@@ -984,9 +1033,9 @@ class DreameHomeClient:
                     try:
                         raw_str = _map_raw_bytes_to_str(raw)
                         mm = self._map_manager
-                        vslam = bool(getattr(mm, "_vslam_map", False)) if mm is not None else False
-                        aes_iv = getattr(mm, "_aes_iv", None) if mm is not None else None
-                        dec = _map_decoder_cls.decode_map(raw_str, vslam, 0, aes_iv, None)
+                        model = self._model or getattr(self._dreame_cloud, "_model", None)
+                        aes_iv = _map_aes_iv(model) or (getattr(mm, "_aes_iv", None) if mm is not None else None)
+                        dec = _map_decoder_cls.decode_map(raw_str, 1, 0, aes_iv, map_key)
                         mdl: Any = None
                         if isinstance(dec, tuple) and len(dec) > 0:
                             mdl = dec[0]
