@@ -915,6 +915,36 @@ class DreameHomeClient:
             return raw
         return None
 
+    def _request_map_object_sync(self) -> str | None:
+        """Ask the robot to upload its current map; return the object name it reports.
+
+        This is what the DreameHome app does to show a live map (action 6.1,
+        an I-frame request). It does not move the robot. Without it, the
+        object name in property 6.3 can point at a map minutes old.
+        """
+        params = json.dumps({"req_type": 1, "frame_type": "I", "force_type": 1}, separators=(",", ":"))
+        try:
+            r = self._safe_call(
+                "send",
+                "action",
+                {"did": str(self._did), "siid": 6, "aiid": 1, "in": [{"piid": 2, "value": params}]},
+            )
+        except Exception as e:
+            logger.debug("request map failed: %s", e)
+            return None
+        old_style: str | None = None
+        for prop in (r.get("out") if isinstance(r, dict) else None) or []:
+            value = str(prop.get("value") or "")
+            if not value:
+                continue
+            if prop.get("piid") == 3:  # OBJECT_NAME
+                return value
+            if prop.get("piid") == 13 and old_style is None:  # OLD_MAP_DATA: "1,<name>[,<key>]"
+                parts = value.split(",")
+                if parts[0] != "0" and len(parts) > 1:
+                    old_style = ",".join(parts[1:])
+        return old_style
+
     async def get_map(self) -> dict:
         """Fetch and decode the current map. Returns base64 PNG if rendering works.
 
@@ -940,7 +970,7 @@ class DreameHomeClient:
             if not self._protocol:
                 return {"success": False, "error": "Not connected"}
             try:
-                name_resolved = self._resolve_live_map_object_name()
+                name_resolved = self._request_map_object_sync() or self._resolve_live_map_object_name()
                 map_key: str | None = None
                 if name_resolved:
                     name_resolved, map_key = _split_object_name(name_resolved)

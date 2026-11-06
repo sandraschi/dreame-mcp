@@ -1,4 +1,4 @@
-"""Map fetch: the object name's key and the model IV.
+"""Map fetch: the object name's key, the model IV and a fresh map request.
 
 Offline: the cloud, decoder and renderer are fakes; no robot or map file involved.
 """
@@ -67,7 +67,7 @@ def map_client(monkeypatch):
 
 def test_live_map_fetched_by_name_and_decrypted_with_key(map_client, monkeypatch):
     fetched = []
-    monkeypatch.setattr(map_client, "_resolve_live_map_object_name", lambda: "obj/1,KEY")
+    monkeypatch.setattr(map_client, "_request_map_object_sync", lambda: "obj/1,KEY")
     monkeypatch.setattr(map_client, "_fetch_map_bytes_from_cloud_url", lambda name: fetched.append(name) or b"RAWMAP")
     result = map_client._get_map_sync()
     assert fetched == ["obj/1"]
@@ -75,3 +75,32 @@ def test_live_map_fetched_by_name_and_decrypted_with_key(map_client, monkeypatch
     assert result["success"]
     assert result["object_name"] == "obj/1"
     assert result["map_data"]["rooms"] == 1
+
+
+def test_falls_back_to_the_property_name_when_the_request_gives_none(map_client, monkeypatch):
+    fetched = []
+    monkeypatch.setattr(map_client, "_request_map_object_sync", lambda: None)
+    monkeypatch.setattr(map_client, "_resolve_live_map_object_name", lambda: "obj/0,K0")
+    monkeypatch.setattr(map_client, "_fetch_map_bytes_from_cloud_url", lambda name: fetched.append(name) or b"RAW")
+    map_client._get_map_sync()
+    assert fetched == ["obj/0"]
+    assert FakeDecoder.calls[0][4] == "K0"
+
+
+@pytest.mark.parametrize(
+    ("out", "expected"),
+    [
+        ([{"piid": 3, "value": "obj/1,KEY"}, {"piid": 13, "value": "1,other,K"}], "obj/1,KEY"),
+        ([{"piid": 3, "value": ""}, {"piid": 13, "value": "1,obj/1,KEY"}], "obj/1,KEY"),
+        ([{"piid": 13, "value": "0,inline-map-data"}], None),
+        ([{"piid": 1, "value": ""}, {"piid": 3, "value": ""}], None),
+    ],
+)
+def test_request_map_reads_the_object_name(out, expected, monkeypatch):
+    c = DreameHomeClient(did="42")
+    sent = []
+    monkeypatch.setattr(c, "_safe_call", lambda *a, **k: sent.append(a) or {"code": 0, "out": out})
+    assert c._request_map_object_sync() == expected
+    method, verb, payload = sent[0]
+    assert (method, verb) == ("send", "action")
+    assert (payload["siid"], payload["aiid"]) == (6, 1)
