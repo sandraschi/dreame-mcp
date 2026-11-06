@@ -945,6 +945,55 @@ class DreameHomeClient:
                     old_style = ",".join(parts[1:])
         return old_style
 
+    def _fetch_saved_map_sync(self) -> tuple[Any, str] | None:
+        """The robot's current saved map, from the map list file named in property 6.8.
+
+        Returns (decoded map, object name), or None. Used when the live map
+        cannot be had; it has the rooms but not where the robot is now.
+        """
+        if _map_decoder_cls is None:
+            return None
+        slot = _miot_did_slots(1, str(self._did) if self._did else None)[0]
+        res = self._safe_call("send", "get_properties", [{"did": slot, "siid": 6, "piid": 8}])
+        value = res[0].get("value") if isinstance(res, list) and res else None
+        try:
+            obj = json.loads(value).get("object_name") if isinstance(value, str) else None
+        except ValueError:
+            obj = None
+        if not obj:
+            return None
+        raw = self._fetch_map_bytes_from_cloud_url(obj)
+        if not raw:
+            return None
+        data = json.loads(_map_raw_bytes_to_str(raw))
+        current = data.get("curr_id")
+        chosen = None
+        for entry in data.get("mapstr") or []:
+            decoded = _map_decoder_cls.decode_saved_map(entry.get("map", ""), 1, int(entry.get("angle") or 0), None)
+            if decoded is None:
+                continue
+            if chosen is None or getattr(decoded, "map_id", None) == current:
+                chosen = decoded
+        return (chosen, obj) if chosen is not None else None
+
+    def _saved_map_result(self) -> dict | None:
+        """The saved map as a get_map answer with "source": "saved", or None."""
+        try:
+            saved = self._fetch_saved_map_sync()
+        except Exception as e:
+            logger.debug("saved map fallback failed: %s", e)
+            return None
+        if saved is None:
+            return None
+        mdl, saved_obj = saved
+        result: dict[str, Any] = {"success": True, "source": "saved", "object_name": saved_obj}
+        if self._map_renderer:
+            out = self._map_renderer.render_map(mdl, 0, 0)
+            if out:
+                result["image"] = base64.b64encode(out).decode()
+        result["map_data"] = _map_object_to_dict(mdl)
+        return result
+
     async def get_map(self) -> dict:
         """Fetch and decode the current map. Returns base64 PNG if rendering works.
 
@@ -1040,6 +1089,9 @@ class DreameHomeClient:
                             logger.debug("get_file_url fallback: %s", e)
 
                 if not raw or _map_bytes_looks_like_error_json(raw):
+                    saved_result = self._saved_map_result()
+                    if saved_result is not None:
+                        return saved_result
                     return {
                         "success": False,
                         "error": "Map fetch failed (signed URL, get_device_file, and property 23.1 all failed)",
@@ -1055,6 +1107,7 @@ class DreameHomeClient:
 
                 result: dict[str, Any] = {
                     "success": True,
+                    "source": "live",
                     "object_name": on_display,
                     "raw_bytes": len(raw),
                 }
@@ -1083,6 +1136,13 @@ class DreameHomeClient:
                     except Exception as e:
                         logger.warning("Map decode/render failed: %s", e)
                         result["render_error"] = str(e)
+                    if "map_data" not in result:
+                        # Downloaded but not decrypted (an unknown IV, a wrong key):
+                        # the saved map still has the rooms.
+                        saved_result = self._saved_map_result()
+                        if saved_result is not None:
+                            saved_result["live_error"] = result.get("render_error")
+                            return saved_result
                 else:
                     missing: list[str] = []
                     if not _map_decoder_cls or not _map_renderer_cls:
