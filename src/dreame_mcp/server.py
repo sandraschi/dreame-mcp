@@ -5,13 +5,15 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastmcp import FastMCP
@@ -140,23 +142,56 @@ async def lifespan(app: FastAPI):
         c.disconnect()
 
 
+#: The web app's own pages: its two local ports, the desktop app, and the same
+#: machines on the home network or the tailnet. CORS and the guard on commands share it.
+APP_ORIGINS = (
+    "http://localhost:10894",
+    "http://127.0.0.1:10894",
+    "http://localhost:10895",
+    "http://127.0.0.1:10895",
+    "http://tauri.localhost",
+    "https://tauri.localhost",
+    "tauri://localhost",
+)
+APP_ORIGIN_REGEX = r"https?://(?:[a-zA-Z0-9-]+\.ts\.net|.*?\.tail-[a-f0-9]+\.ts\.net|tauri\.localhost|localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|100\.\d{1,3}\.\d{1,3}\.\d{1,3})(?::\d+)?$|^tauri://localhost$"
+
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:10894",
-        "http://127.0.0.1:10894",
-        "http://localhost:10895",
-        "http://127.0.0.1:10895",
-        "http://tauri.localhost",
-        "https://tauri.localhost",
-        "tauri://localhost",
-    ],
-    allow_origin_regex=r"https?://(?:[a-zA-Z0-9-]+\.ts\.net|.*?\.tail-[a-f0-9]+\.ts\.net|tauri\.localhost|localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|100\.\d{1,3}\.\d{1,3}\.\d{1,3})(?::\d+)?$|^tauri://localhost$",
+    allow_origins=list(APP_ORIGINS),
+    allow_origin_regex=APP_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _is_app_origin(origin: str) -> bool:
+    return origin in APP_ORIGINS or re.fullmatch(APP_ORIGIN_REGEX, origin) is not None
+
+
+def _origin_of(url: str | None) -> str | None:
+    """'https://site.example' from a full address, or None."""
+    parts = urlsplit(url or "")
+    return f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else None
+
+
+def app_pages_only(request: Request) -> None:
+    """Take a command only from the app's own pages, or from a program that is not a browser.
+
+    A browser says which page a request came from (Origin, else Referer) and
+    that it sent it (the Sec-Fetch headers). The page must be one of the app's
+    own (APP_ORIGINS, APP_ORIGIN_REGEX); a program such as curl sends none of
+    these headers and is accepted as before.
+    """
+    origin = request.headers.get("origin") or _origin_of(request.headers.get("referer"))
+    from_browser = any(name.lower().startswith("sec-fetch-") for name in request.headers)
+    refused = HTTPException(status_code=403, detail="Refused: this request did not come from the Dreame app.")
+    if origin is not None and not _is_app_origin(origin):
+        raise refused
+    if origin is None and from_browser:
+        raise refused
+
 
 mcp_log = ActivityLog()
 install_log_handler(mcp_log)
@@ -715,7 +750,7 @@ async def api_map_yaml():
     )
 
 
-@app.post("/api/v1/control/{cmd}")
+@app.post("/api/v1/control/{cmd}", dependencies=[Depends(app_pages_only)])
 async def api_control(cmd: str):
     valid = ("start_clean", "stop", "pause", "go_home", "find_robot")
     if cmd not in valid:
